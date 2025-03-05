@@ -9,7 +9,7 @@ interim_dir = "practica1/data/interim/"
 def save_dataframe(df, filename):
     if not df.empty:
         df.to_csv(filename, index=False, encoding="utf-8")
-        print(f"Archivo guardado: {filename}")
+        print(f"File saved: {filename}")
 
 def process_file(file_path, sheet_name):
     # Extract the year from the file name (e.g., "il_2017_18_titulacion.xlsx" -> "2017_18")
@@ -54,14 +54,49 @@ def process_file(file_path, sheet_name):
     headers = ["degree", "gender", "mean", "std_deviation", "valid_answers", "n_graduates", "+-error"]
 
     # Convert the lists to DataFrames
-    df_male = pd.DataFrame(gender_a_rows, columns=headers)
-    df_female = pd.DataFrame(gender_b_rows, columns=headers)
-    df_total = pd.DataFrame(gender_c_rows, columns=headers)
+    df_gender_a = pd.DataFrame(gender_a_rows, columns=headers)
+    df_gender_b = pd.DataFrame(gender_b_rows, columns=headers)
+    df_gender_c = pd.DataFrame(gender_c_rows, columns=headers)
 
-    # Save each DataFrame in the year directory
-    save_dataframe(df_male, os.path.join(year_dir, f"filtered_{year}_male.csv"))
-    save_dataframe(df_female, os.path.join(year_dir, f"filtered_{year}_female.csv"))
-    save_dataframe(df_total, os.path.join(year_dir, f"filtered_{year}_total.csv"))
+    # Keep only the required columns: 'degree', 'gender', 'mean', and 'n_graduates'
+    df_gender_a = df_gender_a[["degree", "gender", "mean", "n_graduates"]]
+    df_gender_b = df_gender_b[["degree", "gender", "mean", "n_graduates"]]
+    df_gender_c = df_gender_c[["degree", "gender", "mean", "n_graduates"]]
+
+    # Replace empty strings with Na
+    df_gender_a["mean"] = df_gender_a["mean"].replace("", pd.NA)
+    df_gender_a["n_graduates"] = df_gender_a["n_graduates"].replace("", pd.NA)
+
+    df_gender_b["mean"] = df_gender_b["mean"].replace("", pd.NA)
+    df_gender_b["n_graduates"] = df_gender_b["n_graduates"].replace("", pd.NA)
+
+    df_gender_c["mean"] = df_gender_c["mean"].replace("", pd.NA)
+    df_gender_c["n_graduates"] = df_gender_c["n_graduates"].replace("", pd.NA)
+
+    # Convert columns to numeric, forcing errors to NaN
+    df_gender_a["mean"] = pd.to_numeric(df_gender_a["mean"], errors='coerce')
+    df_gender_a["n_graduates"] = pd.to_numeric(df_gender_a["n_graduates"], errors='coerce')
+
+    df_gender_b["mean"] = pd.to_numeric(df_gender_b["mean"], errors='coerce')
+    df_gender_b["n_graduates"] = pd.to_numeric(df_gender_b["n_graduates"], errors='coerce')
+
+    df_gender_c["mean"] = pd.to_numeric(df_gender_c["mean"], errors='coerce')
+    df_gender_c["n_graduates"] = pd.to_numeric(df_gender_c["n_graduates"], errors='coerce')
+
+    # Convert gender column to lowercase and replace values
+    df_gender_a["gender"] = df_gender_a["gender"].str.lower().replace({"hombre": "male", "mujer": "female", "ambos": "total"})
+    df_gender_b["gender"] = df_gender_b["gender"].str.lower().replace({"hombre": "male", "mujer": "female", "ambos": "total"})
+    df_gender_c["gender"] = df_gender_c["gender"].str.lower().replace({"hombre": "male", "mujer": "female", "ambos": "total"})
+
+    # Drop the gender column as it is now redundant
+    df_gender_a = df_gender_a.drop(columns=["gender"])
+    df_gender_b = df_gender_b.drop(columns=["gender"])
+    df_gender_c = df_gender_c.drop(columns=["gender"])
+
+    # Save each DataFrame in the year directory "filtered_{year}_{gender}.csv"
+    save_dataframe(df_gender_a, os.path.join(year_dir, f"filtered_{year}_male.csv"))
+    save_dataframe(df_gender_b, os.path.join(year_dir, f"filtered_{year}_female.csv"))
+    save_dataframe(df_gender_c, os.path.join(year_dir, f"filtered_{year}_total.csv"))
 
 # Get all .xlsx files in the 'practica1/data/' directory
 file_paths = [os.path.join(raw_dir, filename) for filename in os.listdir(raw_dir) if filename.endswith('.xlsx')]

@@ -1,6 +1,6 @@
-degree,gender,mean,std_deviation,valid_answers,n_graduates,+-error
-1511,MUJER,0.33,0.5,9,34,0.28
-1512,MUJER,7.0,5.62,6,19,3.82
-1513,MUJER,0.0,---,1,2,---
-1514,MUJER,3.0,4.24,2,4,4.8
-1515,MUJER,0.0,0,2,3,0
+degree,mean,n_graduates
+1511,0.33,34
+1512,7.0,19
+1513,0.0,2
+1514,3.0,4
+1515,0.0,3
