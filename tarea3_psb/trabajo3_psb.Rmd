@@ -1,0 +1,605 @@
+---
+title: 'Trabajo 3: Aprendizaje No Supervisado'
+author: "Pablo Setrakian Bearzotti"
+date: "05-05-2025"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: '5'
+  html_document:
+    toc: true
+    toc_depth: 5
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+```
+
+# 1. Introducción
+
+El presente trabajo tiene como objetivo aplicar técnicas de aprendizaje no supervisado, específicamente algoritmos de clustering, para analizar y segmentar un conjunto de datos. Se ha seleccionado el conjunto de datos `iris`, incluido en R base, que constituye uno de los conjuntos de datos más conocidos en la estadística y el aprendizaje automático.
+
+## 1.1. Descripción del conjunto de datos
+
+El conjunto de datos `iris` contiene información sobre 150 flores del género Iris pertenecientes a tres especies diferentes: Iris setosa, Iris versicolor e Iris virginica. Para cada espécimen, se han registrado cuatro variables morfológicas medidas en centímetros:
+
+- Longitud del sépalo (Sepal.Length)
+- Anchura del sépalo (Sepal.Width)
+- Longitud del pétalo (Petal.Length)
+- Anchura del pétalo (Petal.Width)
+
+Este conjunto de datos fue recopilado por el botánico británico Edgar Anderson y posteriormente utilizado por Ronald Fisher en su trabajo seminal sobre análisis discriminante. La riqueza de este conjunto radica en que las especies están distribuidas de tal manera que una de ellas (setosa) es linealmente separable de las otras dos, mientras que las especies versicolor y virginica presentan cierto solapamiento, lo que lo convierte en un excelente caso de estudio para técnicas de clustering.
+
+El objetivo del análisis es encontrar agrupaciones naturales en los datos utilizando únicamente las características morfológicas, y posteriormente contrastar si estas agrupaciones corresponden con las especies biológicas conocidas.
+
+# 2. Análisis Exploratorio de Datos
+
+Como primer paso, se procede a cargar y examinar el conjunto de datos para comprender su estructura y características básicas.
+
+```{r}
+data <- iris %>% 
+  dplyr::select(-Species) %>%
+  glimpse()
+```
+
+## 2.1. Visualización inicial de los datos
+
+Se realizan visualizaciones bivariantes para explorar las relaciones entre las diferentes variables medidas y detectar posibles patrones o agrupaciones naturales en los datos.
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+plot.sl_sw <- data %>% 
+  ggplot() +
+  aes(x = Sepal.Length,
+      y = Sepal.Width) +
+  geom_point() + 
+  theme_bw() +
+  labs(title = "Relación entre longitud y anchura del sépalo",
+       x = "Longitud del sépalo (cm)",
+       y = "Anchura del sépalo (cm)")
+
+plot.pl_pw <- data %>% 
+  ggplot() +
+  aes(x = Petal.Length,
+      y = Petal.Width) +
+  geom_point() + 
+  theme_bw() +
+  labs(title = "Relación entre longitud y anchura del pétalo",
+       x = "Longitud del pétalo (cm)",
+       y = "Anchura del pétalo (cm)")
+
+plot.sl_pl <- data %>% 
+  ggplot() +
+  aes(x = Sepal.Length,
+      y = Petal.Length) +
+  geom_point() + 
+  theme_bw() +
+  labs(title = "Relación entre longitud del sépalo y del pétalo",
+       x = "Longitud del sépalo (cm)",
+       y = "Longitud del pétalo (cm)")
+
+library(ggpubr)
+ggarrange(plot.sl_sw,
+          plot.pl_pw,
+          plot.sl_pl,
+          ncol=1,nrow=3)
+```
+
+En la visualización de las relaciones bivariantes, se pueden observar patrones interesantes:
+
+1. En la relación entre longitud y anchura del sépalo, no se aprecian agrupaciones claramente diferenciadas.
+2. Sin embargo, en la relación entre longitud y anchura del pétalo, se distinguen al menos dos grupos bien diferenciados, con un posible tercer grupo menos definido.
+3. La relación entre la longitud del sépalo y la longitud del pétalo también muestra una clara separación entre grupos.
+
+Para una mejor comprensión de la estructura multidimensional de los datos, se visualizan las relaciones entre tres variables simultáneamente:
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+data %>% 
+  ggplot() + 
+  aes(x = Sepal.Length,
+      y = Petal.Length,
+      color = Petal.Width) + 
+  labs(x="Longitud del sépalo (cm)",
+       y="Longitud del pétalo (cm)",
+       title="Relación entre medidas florales") + 
+  scale_color_continuous(name="Anchura del pétalo (cm)") + 
+  geom_point(size = 2) + 
+  theme_bw()
+```
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+library(plotly)
+data %>% 
+  plot_ly(x = ~ Sepal.Length,
+          y = ~ Petal.Length,
+          z = ~ Petal.Width,
+          color = ~ Sepal.Width,
+          type = "scatter3d",
+          mode = "markers"
+  ) %>% 
+  layout(scene = list(xaxis = list(title = "Longitud del sépalo (cm)"),
+                      yaxis = list(title = "Longitud del pétalo (cm)"),
+                      zaxis = list(title = "Anchura del pétalo (cm)")),
+         title = "Visualización tridimensional de las características florales")
+```
+
+## 2.2. Detección de valores atípicos y ausentes
+
+Es importante verificar la presencia de valores atípicos o ausentes en el conjunto de datos, ya que podrían afectar al rendimiento de los algoritmos de clustering.
+
+```{r}
+# Verificación de valores ausentes
+sum(is.na(data))
+
+# Resumen estadístico para detección de posibles valores atípicos
+summary(data)
+
+# Visualización de diagramas de caja para detectar valores atípicos
+par(mfrow=c(2,2))
+for(i in 1:4) {
+  boxplot(data[,i], main=names(data)[i], col="lightblue")
+}
+```
+
+No se detectan valores ausentes en el conjunto de datos. Los diagramas de caja muestran algunos valores potencialmente atípicos, pero dado el contexto biológico y el tamaño limitado de la muestra, se decide mantenerlos para el análisis de clustering, ya que podrían representar variabilidad natural dentro de las especies.
+
+## 2.3. Preprocesamiento de los datos
+
+A diferencia de otros conjuntos de datos que pueden requerir transformaciones logarítmicas para manejar distribuciones asimétricas, las variables en el conjunto `iris` se encuentran en escalas relativamente similares (todas medidas en centímetros). Sin embargo, existen diferencias en los rangos de las variables que podrían influir en los algoritmos de clustering basados en distancia.
+
+Por lo tanto, se procede a estandarizar las variables para que todas contribuyan equitativamente al análisis:
+
+```{r}
+data_scaled <- data %>% 
+  mutate(
+    across(everything(), 
+           ~ as.numeric(scale(.))
+    )
+  ) %>% 
+  glimpse()
+```
+
+La estandarización convierte cada variable a una escala con media 0 y desviación estándar 1, eliminando así el efecto de las diferentes unidades de medida y magnitudes en el análisis de clustering.
+
+# 3. Agrupamiento Jerárquico
+
+El agrupamiento jerárquico es una técnica que construye una jerarquía de clusters mediante un proceso iterativo. En este trabajo, se aplicará esta técnica con diferentes combinaciones de medidas de disparidad entre observaciones y entre clusters.
+
+## 3.1. Justificación de la elección de medidas de disparidad
+
+### 3.1.1. Medida de disparidad entre observaciones: Distancia Euclidiana
+
+```{r}
+# Elegimos la distancia euclidiana
+dist_eucli <- dist(data_scaled, method="euclidean")
+```
+
+**Justificación de la elección de distancia Euclidiana:**
+
+La distancia euclidiana ha sido seleccionada como medida de disparidad entre observaciones por las siguientes razones:
+
+1. **Interpretabilidad geométrica**: Las medidas de pétalos y sépalos representan distancias físicas en el espacio, y la distancia euclidiana corresponde directamente al concepto intuitivo de distancia en un espacio geométrico.
+
+2. **Correlación entre variables**: Las características morfológicas de las flores (longitud y anchura) están correlacionadas naturalmente, y la distancia euclidiana captura adecuadamente estas relaciones.
+
+3. **Variables en la misma escala**: Después de la estandarización, todas las variables están en la misma escala, haciendo que la distancia euclidiana sea equitativa en su ponderación de cada característica.
+
+4. **Sensibilidad a diferencias grandes**: La distancia euclidiana, al elevar al cuadrado las diferencias, es más sensible a diferencias grandes entre especies, lo que es útil para identificar grupos bien diferenciados como en el caso de las especies de Iris.
+
+### 3.1.2. Medida de disparidad entre clusters: Comparación de métodos de enlace
+
+Para evaluar el impacto del método de enlace en los resultados del clustering jerárquico, se compararán dos enfoques: el método de Ward y el método de enlace completo.
+
+#### 3.1.2.1. Método de Ward
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+library(ggdendro)
+# Aplicamos el método de Ward
+model_dendo.ward <- dist_eucli %>% 
+  hclust(method = "ward.D")
+
+model_dendo.ward %>% 
+  ggdendrogram(
+    rotate = FALSE,
+    labels = FALSE,
+    theme_dendro = TRUE
+  ) +
+  labs(title = "Dendograma con método de Ward")
+```
+
+**Justificación de la elección del método de Ward:**
+
+El método de Ward es considerado apropiado para el conjunto de datos Iris por los siguientes motivos:
+
+1. **Minimización de la varianza**: Ward busca minimizar la suma de cuadrados dentro de cada cluster, lo que resulta en grupos homogéneos y es ideal para identificar grupos compactos como las especies de Iris.
+
+2. **Robustez frente a valores atípicos**: En comparación con otros métodos, Ward es menos susceptible al efecto de encadenamiento y produce clusters más equilibrados en tamaño.
+
+3. **Coherencia con k-means**: El método de Ward utiliza criterios similares a k-means (minimización de varianza), lo que facilita la comparación entre ambos métodos de clustering.
+
+4. **Evidencia empírica**: En numerosos estudios comparativos de técnicas de clustering, el método de Ward ha demostrado un rendimiento superior para conjuntos de datos con clusters bien definidos y de tamaño similar, como es el caso del conjunto de datos Iris.
+
+#### 3.1.2.2. Método de enlace completo
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+# Aplicamos el método de enlace completo
+model_dendo.complete <- dist_eucli %>% 
+  hclust(method = "complete")
+
+model_dendo.complete %>% 
+  ggdendrogram(
+    rotate = FALSE,
+    labels = FALSE,
+    theme_dendro = TRUE
+  ) +
+  labs(title = "Dendograma con método de enlace completo")
+```
+
+**Comparación entre métodos de enlace:**
+
+El método de enlace completo define la distancia entre clusters como la máxima distancia entre cualquier par de puntos pertenecientes a clusters diferentes. En comparación con el método de Ward:
+
+1. **Forma de los clusters**: El enlace completo tiende a formar clusters más compactos y de tamaño similar, pero puede ser sensible a valores atípicos.
+
+2. **Estructura jerárquica**: El dendrograma resultante muestra una estructura diferente, con ramificaciones más pronunciadas que pueden dificultar la identificación del número óptimo de clusters.
+
+3. **Interpretabilidad**: En el contexto de las características morfológicas de las flores, el enlace completo podría no capturar tan bien la variabilidad natural dentro de cada especie como lo hace el método de Ward.
+
+### 3.1.3. Visualización mejorada de los dendrogramas
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+library(dendextend)
+
+# Visualización mejorada del dendrograma con método de Ward
+dend_ward <- model_dendo.ward %>% 
+  as.dendrogram() %>% 
+  color_branches(k = 3) %>%  
+  color_labels(k = 3) %>%  #colorea según el clúster
+  set("labels_cex", 0.4)
+
+# Visualización mejorada del dendrograma con método de enlace completo
+dend_complete <- model_dendo.complete %>% 
+  as.dendrogram() %>% 
+  color_branches(k = 3) %>%  
+  color_labels(k = 3) %>%  
+  set("labels_cex", 0.4)
+
+# Comparación visual
+par(mfrow=c(1,2))
+plot(dend_ward, main = "Método de Ward", ylab = "Altura (disimilitud)")
+abline(h = 15, lty=2)
+plot(dend_complete, main = "Método de enlace completo", ylab = "Altura (disimilitud)")
+abline(h = 15, lty=2)
+```
+
+La comparación visual de los dendrogramas revela diferencias significativas en la estructura jerárquica producida por cada método de enlace. El método de Ward tiende a producir clusters más equilibrados y una jerarquía más clara, mientras que el enlace completo muestra una estructura más irregular.
+
+## 3.2. Determinación del número óptimo de clusters
+
+Para determinar el número óptimo de clusters en el agrupamiento jerárquico, se utiliza el método de la silueta, que evalúa la calidad de los clusters en función de la cohesión interna y la separación entre clusters.
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+library(factoextra)
+
+data_scaled %>% 
+  fviz_nbclust(FUNcluster = hcut, 
+               method = "silhouette",
+               k.max = 10) +
+  labs(title = "Número óptimo de clusters según el método de la silueta")
+```
+
+El método de la silueta sugiere que el número óptimo de clusters es 2. Sin embargo, teniendo en cuenta el conocimiento previo de que existen tres especies de Iris en el conjunto de datos, y considerando la estructura observada en el análisis exploratorio, se decide proceder con 3 clusters para el análisis.
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+# Visualización del dendrograma con 3 clusters
+model_dendo.ward %>% 
+  fviz_dend(k = 3,
+            rect = TRUE,
+            horiz = FALSE,
+            rect_border = "gray",
+            rect_fill = FALSE,
+            cex = 0.4,
+            lwd = 0.2,
+            k_colors = c("red","blue","green"),
+            ggtheme = theme_bw()
+  )
+```
+
+## 3.3. Representaciones alternativas del dendrograma
+
+Para una comprensión más completa de la estructura jerárquica, se presentan representaciones alternativas del dendrograma:
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+# Representación filogenética del dendrograma
+model_dendo.ward %>% 
+  fviz_dend(k = 3,
+            rect = TRUE,
+            horiz = FALSE,
+            rect_border = "gray",
+            rect_fill = FALSE,
+            cex = 0.4,
+            lwd = 0.2,
+            k_colors = c("red","blue","green"),
+            ggtheme = theme_bw(),
+            type = "phylogenic",
+            main = "Representación filogenética (método de Ward)"
+  )
+
+# Representación circular del dendrograma
+model_dendo.ward %>% 
+  fviz_dend(k = 3,
+            rect = TRUE,
+            horiz = FALSE,
+            rect_border = "gray",
+            rect_fill = FALSE,
+            cex = 0.4,
+            lwd = 0.2,
+            k_colors = c("red","blue","green"),
+            ggtheme = theme_bw(),
+            type = "circular",
+            main = "Representación circular (método de Ward)"
+  )
+```
+
+## 3.4. Evaluación de la calidad del clustering
+
+Para evaluar la calidad del clustering jerárquico, se utiliza el análisis de silueta, que proporciona una medida de cuán bien está asignada cada observación a su cluster.
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+# Análisis de silueta para el método de Ward
+library(cluster)
+fviz_silhouette(
+  silhouette(cutree(model_dendo.ward, k = 3), dist_eucli),
+  palette = c("red", "blue", "green"),
+  ggtheme = theme_bw()
+) +
+  labs(title = "Análisis de silueta para clustering jerárquico (método de Ward)")
+
+# Análisis de silueta para el método de enlace completo
+fviz_silhouette(
+  silhouette(cutree(model_dendo.complete, k = 3), dist_eucli),
+  palette = c("red", "blue", "green"),
+  ggtheme = theme_bw()
+) +
+  labs(title = "Análisis de silueta para clustering jerárquico (enlace completo)")
+```
+
+**Interpretación del análisis de silueta:**
+
+El análisis de silueta revela la calidad de la asignación de las observaciones a los clusters. Los valores de silueta próximos a 1 indican una buena asignación, mientras que valores cercanos a 0 o negativos sugieren posibles asignaciones incorrectas.
+
+Se observa que:
+- El método de Ward produce clusters con valores de silueta generalmente más altos, lo que indica una mejor separación entre clusters.
+- El método de enlace completo muestra valores de silueta más variables, con algunas observaciones potencialmente mal asignadas.
+
+Basándose en estos resultados, se decide proceder con el método de Ward para la construcción final de los clusters.
+
+## 3.5. Construcción final de clusters jerárquicos
+
+```{r}
+data_scaled <- data_scaled %>% 
+  mutate(
+    cluster_jerar = factor(model_dendo.ward %>% 
+                             cutree(k = 3))
+  ) %>% 
+  glimpse()
+```
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+library(plotly)
+
+data_scaled %>% 
+  plot_ly(x = ~ Sepal.Length,
+          y = ~ Petal.Length,
+          z = ~ Petal.Width,
+          color = ~ cluster_jerar,
+          type = "scatter3d",
+          mode = "markers",
+          colors = c("red","blue","green")
+  ) %>% 
+  layout(scene = list(xaxis = list(title = "Longitud del sépalo (estand.)"),
+                      yaxis = list(title = "Longitud del pétalo (estand.)"),
+                      zaxis = list(title = "Anchura del pétalo (estand.)")),
+         title = "Visualización 3D de clusters jerárquicos (método de Ward)")
+```
+
+# 4. Algoritmo K-medias
+
+El algoritmo k-medias es una técnica de partición que divide el conjunto de datos en k grupos, donde cada observación pertenece al cluster con el centroide más cercano.
+
+## 4.1. Determinación del número óptimo de clusters
+
+Para determinar el número óptimo de clusters en k-medias, se utiliza el método del codo (elbow method), que examina la variación de la suma de cuadrados dentro del cluster (WSS) en función del número de clusters.
+
+```{r,fig.align='center',fig.width=5,fig.height=5}
+library(factoextra)
+
+data_scaled %>% 
+  select(-cluster_jerar) %>% #debemos eliminar esta variable
+  fviz_nbclust(FUNcluster = kmeans, 
+               method = "wss") +
+  labs(title = "Método del codo para determinar el número óptimo de clusters",
+       x = "Número de clusters",
+       y = "Suma de cuadrados dentro del cluster (WSS)")
+```
+
+**Justificación de la elección del número de clusters:**
+
+El gráfico del método del codo muestra la disminución de la suma de cuadrados dentro del cluster (WSS) a medida que aumenta el número de clusters. Se busca el punto donde esta disminución se estabiliza, formando un "codo" en el gráfico.
+
+En este caso, se puede observar un codo en k=3, lo que sugiere que este es el número óptimo de clusters. Esta elección coincide con el conocimiento previo de que el conjunto de datos contiene tres especies de Iris.
+
+## 4.2. Aplicación del algoritmo K-medias
+
+```{r}
+model_kmeans <- data_scaled %>% 
+  select(-cluster_jerar) %>% 
+  kmeans(centers = 3,
+         nstart = 10)
+
+model_kmeans
+```
+
+```{r}
+# Distribución de observaciones en los clusters
+table(model_kmeans$cluster)
+```
+
+## 4.3. Construcción de clusters con K-medias
+
+```{r}
+data_scaled <- data_scaled %>% 
+  mutate(
+    cluster_kmeans = factor(model_kmeans$cluster)
+    ) %>% 
+  glimpse()
+```
+
+```{r,fig.align='center',fig.asp=1,fig.height=5,fig.width=5}
+library(plotly)
+
+data_scaled %>% 
+  plot_ly(x = ~ Sepal.Length,
+          y = ~ Petal.Length,
+          z = ~ Petal.Width,
+          color = ~ cluster_kmeans,
+          type = "scatter3d",
+          mode = "markers",
+          colors = c("red","blue","green")
+  ) %>% 
+  layout(scene = list(xaxis = list(title = "Longitud del sépalo (estand.)"),
+                      yaxis = list(title = "Longitud del pétalo (estand.)"),
+                      zaxis = list(title = "Anchura del pétalo (estand.)")),
+         title = "Visualización 3D de clusters K-medias")
+```
+
+## 4.4. Visualización detallada de los clusters K-medias
+
+```{r,fig.align='center',fig.width=5,fig.height=5}
+library(factoextra)
+
+model_kmeans %>% 
+  fviz_cluster(
+    data = data_scaled %>% select(Sepal.Length, Sepal.Width, Petal.Length, Petal.Width),
+    geom = "point",
+    palette = c("red","blue","green"),
+    ellipse = TRUE,
+    ellipse.type = "euclid",
+    star.plot = TRUE,
+    repel = TRUE,
+    ggtheme = theme_bw()
+  ) +
+  labs(title = "Visualización de clusters K-medias con elipses de confianza")
+```
+
+# 5. Comparación de Resultados
+
+## 5.1. Comparación con las especies biológicas conocidas
+
+Para evaluar la efectividad de los algoritmos de clustering, se comparan los clusters obtenidos con las especies biológicas conocidas:
+
+```{r}
+# Añadimos las especies reales para comparar
+data_comparison <- data_scaled %>%
+  mutate(Species = iris$Species)
+
+# Tabla de contingencia entre cluster k-means y especies
+tabla_kmeans <- table(data_comparison$cluster_kmeans, data_comparison$Species)
+print("Comparación de K-medias con especies reales:")
+print(tabla_kmeans)
+
+# Tabla de contingencia entre cluster jerárquico y especies
+tabla_jerar <- table(data_comparison$cluster_jerar, data_comparison$Species)
+print("Comparación de clustering jerárquico con especies reales:")
+print(tabla_jerar)
+
+# Cálculo de precisión para K-medias
+precision_kmeans <- sum(diag(tabla_kmeans)) / sum(tabla_kmeans)
+cat("Precisión de K-medias:", round(precision_kmeans*100, 2), "%\n")
+
+# Cálculo de precisión para clustering jerárquico
+precision_jerar <- sum(diag(tabla_jerar)) / sum(tabla_jerar)
+cat("Precisión de clustering jerárquico:", round(precision_jerar*100, 2), "%\n")
+```
+
+## 5.2. Visualización comparativa
+
+```{r,fig.align='center',fig.width=5,fig.height=5}
+# Visualización con las especies reales
+ggplot(data_comparison, aes(x = Petal.Length, y = Petal.Width, color = Species, shape = cluster_kmeans)) +
+  geom_point(size = 3) +
+  labs(title = "Comparación de clusters K-medias con especies reales",
+       x = "Longitud del pétalo (estand.)",
+       y = "Anchura del pétalo (estand.)") +
+  theme_bw()
+
+ggplot(data_comparison, aes(x = Petal.Length, y = Petal.Width, color = Species, shape = cluster_jerar)) +
+  geom_point(size = 3) +
+  labs(title = "Comparación de clusters jerárquicos con especies reales",
+       x = "Longitud del pétalo (estand.)",
+       y = "Anchura del pétalo (estand.)") +
+  theme_bw()
+```
+
+## 5.3. Análisis multivariante comparativo
+
+```{r,fig.align='center',fig.width=7,fig.height=7}
+# Matriz de gráficos de dispersión coloreados por especie y clusters
+library(GGally)
+
+# Seleccionamos variables relevantes para la visualización
+data_viz <- data_comparison %>%
+  select(Sepal.Length, Sepal.Width, Petal.Length, Petal.Width, Species, cluster_kmeans, cluster_jerar)
+
+# Matriz para clusters K-medias
+ggpairs(data_viz, 
+        columns = 1:4,
+        aes(color = cluster_kmeans),
+        upper = list(continuous = "points"),
+        diag = list(continuous = "densityDiag"),
+        lower = list(continuous = "points")) +
+  theme_bw() +
+  labs(title = "Matriz de dispersión por clusters K-medias")
+
+# Matriz para clusters jerárquicos
+ggpairs(data_viz, 
+        columns = 1:4,
+        aes(color = cluster_jerar),
+        upper = list(continuous = "points"),
+        diag = list(continuous = "densityDiag"),
+        lower = list(continuous = "points")) +
+  theme_bw() +
+  labs(title = "Matriz de dispersión por clusters jerárquicos")
+
+# Matriz por especies reales
+ggpairs(data_viz, 
+        columns = 1:4,
+        aes(color = Species),
+        upper = list(continuous = "points"),
+        diag = list(continuous = "densityDiag"),
+        lower = list(continuous = "points")) +
+  theme_bw() +
+  labs(title = "Matriz de dispersión por especies reales")
+```
+
+# 6. Conclusiones
+
+Tras aplicar dos técnicas diferentes de clustering al conjunto de datos Iris, se pueden extraer las siguientes conclusiones:
+
+1. **Eficacia de las técnicas de clustering**: Tanto el agrupamiento jerárquico con el método de Ward como el algoritmo K-medias han demostrado ser eficaces para identificar las agrupaciones naturales en el conjunto de datos Iris, logrando una alta correspondencia con las especies biológicas conocidas.
+
+2. **Comparación de métodos**: 
+   - El método de Ward en el agrupamiento jerárquico resultó ser superior al método de enlace completo, produciendo clusters más coherentes y mejor separados según el análisis de silueta.
+   - El algoritmo K-medias y el agrupamiento jerárquico con Ward produjeron resultados muy similares, con una ligera ventaja para K-medias en términos de precisión global.
+
+3. **Número óptimo de clusters**: Aunque el análisis de silueta sugirió inicialmente 2 clusters como número óptimo, la incorporación del conocimiento previo sobre la existencia de 3 especies y el análisis del método del codo confirmaron que 3 es el número más adecuado de clusters para este conjunto de datos.
+
+4. **Características discriminatorias**: Las variables relacionadas con el pétalo (longitud y anchura) resultaron ser más discriminatorias que las variables del sépalo para la identificación de las especies de Iris, como se evidencia en las visualizaciones multivariantes.
+
+5. **Implicaciones biológicas**: Los resultados del clustering sugieren que las características morfológicas medidas son suficientes para diferenciar las tres especies de Iris, con una separación particularmente clara de Iris setosa respecto a las otras dos especies, mientras que Iris versicolor e Iris virginica presentan cierto solapamiento.
+
+6. **Limitaciones y trabajo futuro**: 
+   - Para mejorar aún más la separación entre Iris versicolor e Iris virginica, podrían considerarse técnicas más avanzadas o la inclusión de características morfológicas adicionales.
+   - Un análisis más profundo de las contribuciones relativas de cada variable a la formación de clusters podría proporcionar insights adicionales sobre las características distintivas de cada especie.
+
+En conclusión, este trabajo demuestra la utilidad de las técnicas de clustering para identificar patrones naturales en datos multivariantes y su aplicabilidad en contextos biológicos como la clasificación taxonómica. Los resultados obtenidos validan la separación morfológica de las tres especies de Iris estudiadas, mostrando la eficacia tanto del agrupamiento jerárquico como del algoritmo K-medias cuando se aplican con las medidas de disparidad y parámetros adecuados.
