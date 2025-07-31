@@ -1,0 +1,2256 @@
+---
+title: "Trabajo 2"
+author: "Pablo Setrakian Bearzotti"
+date: "2025-04-05"
+output:
+  html_document:
+    toc: true
+    toc_depth: 5
+    number_sections: false
+  pdf_document:
+    toc: true
+    toc_depth: '5'
+output_dir: out
+editor_options:
+  markdown:
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Introducción
+
+El presente trabajo tiene como objetivo explorar y analizar cómo las características disponibles en el conjunto de datos `boston.csv` se relacionan con una variable continua y una variable categórica, utilizando técnicas de aprendizaje supervisado.
+En particular, se desarrollarán modelos de regresión para predecir una variable cuantitativa y modelos de clasificación para estimar una variable cualitativa.
+
+El análisis se enfoca no solo en la aplicación de los modelos, sino también en la evaluación de su precisión mediante métricas adecuadas, la comparación de resultados y la interpretación estadística de los mismos.
+
+Además, se incluye un análisis exploratorio detallado que permite comprender mejor el comportamiento de los datos y guiar la selección de variables predictoras.
+
+Todo esto con el fin de extraer conclusiones relevantes sobre el conjunto de datos y las metodologías empleadas.
+
+# 2. Conjunto de Datos
+
+Para la realización de este trabajo se ha seleccionado el conjunto de datos **"The Boston HousePrice Data"**, disponible públicamente en la plataforma Kaggle: <https://www.kaggle.com/datasets/fedesoriano/the-boston-houseprice-data>
+
+Este dataset es ampliamente utilizado en problemas de regresión dentro del aprendizaje automático y la estadística, lo que lo convierte en una excelente elección para estudiar cómo las características socioeconómicas y urbanísticas de diferentes distritos de Boston influyen en el precio medio de la vivienda.
+Los datos fueron recopilados en **1978**, y aunque no son actuales, siguen siendo muy relevantes para propósitos educativos y de modelado, ya que ofrecen una estructura clara y un contexto realista.
+
+El dataset fue seleccionado debido a su **interés práctico en el contexto inmobiliario**. Analizar cómo diferentes factores impactan el valor de las viviendas permite no solo aplicar técnicas estadísticas y de machine learning, sino también entender mejor el funcionamiento del mercado inmobiliario desde una perspectiva analítica.
+
+## 2.1 Descripción general
+
+El dataset contiene **506 observaciones** correspondientes a distintos distritos de Boston y **14 variables**, de las cuales 13 son predictoras y 1 es la variable objetivo: el valor medio de las viviendas.
+
+## 2.2 Variables disponibles
+
+| Variable | Descripción |
+|-----------------|-------------------------------------------------------|
+| `CRIM` | Tasa de criminalidad per cápita por ciudad |
+| `ZN` | Proporción de terreno residencial dividido en parcelas \> 25,000 pies² |
+| `INDUS` | Proporción de hectáreas comerciales no minoristas por ciudad |
+| `CHAS` | Variable ficticia (= 1 si la zona está junto al río Charles; 0 en caso contrario) |
+| `NOX` | Concentración de óxidos de nitrógeno (partes por 10 millones) |
+| `RM` | Número medio de habitaciones por vivienda |
+| `AGE` | Proporción de viviendas ocupadas por propietarios construidas antes de 1940 |
+| `DIS` | Distancia ponderada a cinco centros de empleo de Boston |
+| `RAD` | Índice de accesibilidad a autopistas radiales |
+| `TAX` | Tasa de impuestos a la propiedad por cada 10,000 dólares |
+| `PTRATIO` | Ratio alumno/profesor por ciudad |
+| `B` | 1000(Bk - 0.63)², donde Bk es la proporción de población afroamericana |
+| `LSTAT` | Porcentaje de población con bajo estatus socioeconómico |
+| `MEDV` | Valor medio de las viviendas (en miles de dólares) – *variable objetivo* |
+
+## 2.3 Justificación de la elección
+
+-   Permite abordar problemas de **regresión supervisada** prediciendo el valor medio de las viviendas (`MEDV`).
+-   Es posible construir un problema de **clasificación supervisada** categorizando la variable `MEDV`.
+-   Contiene una combinación rica y variada de variables numéricas y categóricas.
+-   Es un dataset muy utilizado y documentado, ideal para comparar resultados.
+-   Su contexto urbano lo hace especialmente relevante dada mi **afinidad con el sector inmobiliario**.
+
+## 2.4 Limpieza del conjunto de datos
+
+El primer paso consiste en limpiar el conjunto de datos para identificar las variables relevantes.
+Este proceso incluye la selección de variables, el manejo de datos faltantes y la eliminación de valores atípicos, entre otros aspectos.
+
+A continuación, se examina la estructura del conjunto de datos.
+
+```{r}
+library(readr)
+library(tidyverse)
+library(here)
+```
+
+
+```{r}
+boston_housing <- read_csv(here("data", "boston.csv"))
+
+data <- boston_housing |>
+  glimpse()
+```
+
+```{r}
+data <- boston_housing |>
+  glimpse()
+```
+
+Se verificará la existencia de valores perdidos:
+
+```{r}
+data |>
+  mutate(id_row = row_number()) |>
+  filter(if_any(everything(),is.na))
+```
+
+No existen valores perdidos en el conjunto de datos. En caso de que existan, pueden eliminarse mediante el siguiente procedimiento.
+
+```{r}
+data <- data |> 
+  drop_na() |> 
+  glimpse()
+```
+
+Finalmente, se debe identificar la variable respuesta y las predictoras correspondientes. En este caso, la variable respuesta es `medv` y las variables predictoras son todas las demás.
+
+
+$$
+MEDV = \beta_0 + \beta_1 CRIM + \beta_2 ZN + \beta_3 INDUS + \beta_4 NOX + \beta_5 RM + \beta_6 AGE + \beta_7 DIS + \beta_8 RAD + \beta_9 TAX + \beta_{10} PTRATIO + \beta_{11} B + \beta_{12} LSTAT + \varepsilon
+$$
+
+## 2.5 Visualización del conjunto de datos
+
+Una vez depurado el conjunto de datos, el siguiente paso consiste en realizar una visualización para examinar si existe alguna relación entre la variable dependiente y las variables independientes de manera aislada. En caso de que tal relación exista, también será posible determinar su naturaleza, lo que es clave, ya que si la relación no es lineal, no sería adecuado aplicar un modelo de regresión lineal. Para ello, se utiliza un gráfico de dispersión.
+
+La función ggpairs() del paquete GGally permite generar una matriz de correlaciones entre las variables de interés.
+
+En la parte superior de la matriz se encuentra el coeficiente de correlación de Pearson, acompañado de una simbología que indica si dicha correlación es estadísticamente significativa. En la diagonal de la matriz se muestra la función de densidad de cada variable, mientras que en la parte inferior se presentan los gráficos de dispersión entre cada par de variables.
+
+```{r}
+library(GGally)
+library(ggplot2)
+```
+
+
+```{r ggpairs_grande, fig.width=18, fig.height=14, message=FALSE, warning=FALSE}
+data |>
+  ggpairs(
+    lower = list(continuous = wrap("points", alpha = 0.5, size = 1)),
+    diag = list(continuous = wrap("densityDiag")),
+    upper = list(continuous = wrap("cor", size = 4))
+  ) +
+  theme_minimal()
+```
+
+Se observa que la variable `medv` tiene una correlación positiva con las variables `rm`, `zn`, `dis`, `rad`, `tax`, `ptratio` y `b`.
+Por otro lado, tiene una correlación negativa con las variables `crim`, `indus`, `nox`, `age` y `lstat`.
+
+Esto sugiere que a medida que aumenta el número de habitaciones, la proporción de terrenos residenciales, la distancia a los centros de empleo, la proporción de población estudiantil y la concentración de óxidos nítricos, el valor medio de las viviendas también tiende a aumentar.
+
+Por el contrario, a medida que aumenta la tasa de criminalidad, la proporción de terrenos industriales, la edad de las viviendas y la proporción de población con bajo nivel educativo, el valor medio de las viviendas tiende a disminuir.
+
+# 3. Aplicación de la Tecnica de Regresión
+
+A continuación, se aplicarán distintas técnicas de regresión.
+
+## 3.1 Regresión Lineal multiple
+
+La regresión lineal múltiple es una técnica estadística que tiene como objetivo establecer una relación lineal entre una variable dependiente $Y$ y un conjunto de $p$ variables independientes o predictoras $X_1, X_2, \dots, X_p$.
+
+Esta relación se expresa mediante el siguiente modelo:
+
+$$
+Y = \beta_0 + \beta_1 X_1 + \beta_2 X_2 + \dots + \beta_p X_p + \varepsilon
+$$
+
+En esta ecuación, $\beta_0$ representa la ordenada en el origen, es decir, el valor esperado de $Y$ cuando todas las variables predictoras son cero.
+
+Los coeficientes $\beta_1, \beta_2, \dots, \beta_p$ indican el efecto promedio de cada variable independiente sobre la variable dependiente, manteniendo las demás constantes.
+
+Por su parte, $\varepsilon$ representa el término de error aleatorio, que recoge las desviaciones del modelo respecto a los datos observados.
+
+Para que el modelo sea válido y útil en la práctica, es fundamental que el término de error cumpla ciertas hipótesis estadísticas, como la normalidad, independencia y homocedasticidad. En las siguientes secciones, se detallará paso a paso cómo construir, interpretar y validar un modelo óptimo de regresión lineal múltiple a partir del conjunto de datos utilizado.
+
+### 3.1.1 Conjuntos de entrenamiento y validación
+
+Después de confirmar que existe una relación entre las variables, el siguiente paso es dividir el conjunto de datos en dos partes: el Conjunto de Entrenamiento y el Conjunto de Validación, con el propósito de evaluar el modelo de regresión más adelante.
+
+Se aplicará la regla de partición 70/30 —comúnmente utilizada, aunque en algunos casos se emplea una proporción 80/20—, asignando el 70 % de las observaciones al conjunto de entrenamiento y el 30 % restante al conjunto de validación.
+
+```{r}
+library(rsample)
+```
+
+
+```{r}
+set.seed(1234)
+
+data_split <- data |>
+  initial_split(prop = 0.7)
+
+data_train <- data_split |>
+  training() |>
+  glimpse()
+
+data_test <- data_split |>
+  testing() |>
+  glimpse()
+```
+
+En consecuencia, el conjunto de entrenamiento se empleará para ajustar el modelo, mientras que el conjunto de validación se utilizará para evaluar su rendimiento, cuantificando su precisión mediante técnicas de validación adecuadas.
+
+### 3.1.2 Aplicación del modelo de regresión lineal múltiple
+
+Para la aplicación del modelo de regresión se emplea la función lm() del lenguaje R, la cual permite ajustar un modelo de regresión lineal a los datos disponibles.
+
+```{r}
+mlr <- lm(MEDV ~ ., data = data_train)
+
+summary(mlr)
+```
+
+
+### 3.1.3 Contraste de Hipótesis
+
+Una vez aplicado el modelo de regresión lineal, corresponde interpretar los resultados obtenidos.
+
+**Contraste de hipótesis global:**
+
+$$
+H_0: \beta_1 = \beta_2 = \dots = \beta_p = 0 \\
+H_1: \exists\ \beta_j \neq 0
+$$
+
+Este contraste global permite evaluar si alguna de las variables predictoras ejerce influencia sobre la variable respuesta `MEDV`.
+
+La hipótesis nula establece que ninguna de las variables predictoras tiene efecto sobre `MEDV`, mientras que la hipótesis alternativa plantea que al menos una de ellas sí presenta un efecto significativo.
+
+Este contraste se encuentra en la última fila del resumen del modelo ajustado (`summary(modelo)`), donde se muestra el valor del estadístico F y su correspondiente valor-p.
+En nuestro caso:
+
+-   Estadístico F: **78.79**
+-   Valor-p asociado: **\< 2.2e-16**
+
+Como el valor-p es inferior al nivel de significación $\alpha = 0.05$, se obtiene un resultado significativo.
+Por tanto:
+
+> **Se rechaza la hipótesis nula**, y se concluye que **al menos una de las variables predictoras influye sobre la variable respuesta `MEDV`**.
+
+------------------------------------------------------------------------
+
+**Contraste individual para cada variable predictora:**
+
+A continuación, se analizan los contrastes individuales para cada uno de los coeficientes del modelo, es decir, para cada variable predictora:
+
+$$
+H_0: \beta_j = 0 \quad \text{vs} \quad H_1: \beta_j \neq 0 \quad \text{para } j = 1, \dots, p
+$$
+
+En la salida del modelo, en la columna `Pr(>|t|)` se encuentran los valores-p para cada predictor.
+Si el valor-p es menor que $\alpha = 0.05$, se considera significativo y se rechaza la hipótesis nula para ese predictor.
+
+En este caso:
+
+-   Las variables **CRIM**, **ZN**, **CHAS**, **NOX**, **RM**, **DIS**, **RAD**, **TAX**, **PTRATIO**, **B** y **LSTAT** tienen un **p-valor \< 0.05**, por lo que **sí influyen significativamente sobre `MEDV`**.
+-   Por otro lado, las variables **INDUS** y **AGE** tienen un **p-valor \> 0.05**, por lo que **no resultan significativas** en este modelo y deben ser eliminadas.
+
+```{r}
+data_train <- data_split |>
+  training() |>
+  select(-INDUS, -AGE) |>
+  glimpse()
+
+data_test <- data_split |>
+  testing() |>
+  select(-INDUS, -AGE) |>
+  glimpse()
+
+mlr <- lm(MEDV ~ ., data = data_train)
+summary(mlr)
+```
+
+El modelo ajustado incluye únicamente variables predictoras que presentan una influencia estadísticamente significativa sobre la variable respuesta.
+
+### 3.1.4 Interpretación de los Coeficientes
+
+Una vez ajustado el modelo de regresión lineal múltiple, es importante interpretar los coeficientes obtenidos para comprender la influencia de cada variable predictora sobre la variable respuesta `MEDV`.
+
+Cada coeficiente $\beta_j$ representa el efecto marginal de la variable predictora correspondiente $X_j$ sobre la variable respuesta, manteniendo constante el resto de variables del modelo. Es decir, indica el cambio promedio en el valor de `MEDV` ante un aumento de una unidad en $X_j$, suponiendo que las demás variables permanecen fijas.
+
+El signo del coeficiente permite determinar el tipo de relación: - Si $\beta_j > 0$, existe una relación **positiva**: al aumentar $X_j$, `MEDV` también tiende a aumentar.
+- Si $\beta_j < 0$, existe una relación **negativa**: al aumentar $X_j$, `MEDV` tiende a disminuir.
+- Si $\beta_j = 0$, $X_j$ no tiene un efecto significativo sobre `MEDV`.
+
+La magnitud del coeficiente también proporciona información sobre la intensidad del efecto, aunque esta debe interpretarse considerando la escala de cada variable.
+
+A continuación, se analiza cada coeficiente del modelo final para interpretar cómo influye cada predictor sobre el precio medio de la vivienda (`MEDV`). Para ello, se emplean las funciones `coef()` y `confint()` para obtener los coeficientes y sus intervalos de confianza.
+
+```{r}
+mlr |>
+  coef()
+```
+
+```{r}
+mlr |>
+  confint()
+```
+
+-   **(Intercept)**: Si no se consideran ninguna de las variables predictoras, el 'MEDV' toma un valor medio de **26.96K \$** con un intervalo de confianza al 95%, de $[14.54, 39.39]$K \$.
+
+-   **CRIM**: Por cada unidad adicional en la tasa de criminalidad per cápita, el precio medio disminuye en **0.11 unidades**, manteniendo constantes el resto de variables.
+    Este efecto es negativo y su intervalo de confianza $[-0.18, -0.04]$ no contiene el 0, por lo que es **estadísticamente significativo**.
+
+-   **ZN**: Por cada unidad adicional en el porcentaje de suelo residencial de grandes parcelas, `MEDV` aumenta en **0.047 unidades**, manteniendo constantes el resto de variables.
+    Su efecto es positivo y significativo, con un intervalo de confianza $[0.016, 0.078]$.
+
+-   **CHAS**: Si una vivienda se encuentra junto al río Charles (`CHAS = 1`), el valor medio de `MEDV` es **2.71 unidades mayor** que si no lo está, manteniendo constantes las demás variables.
+    Este efecto es **significativo** $[0.82, 4.61]$.
+
+-   **NOX**: Un aumento de una unidad en la concentración de óxidos de nitrógeno se asocia con una disminución de **18.93 unidades** en `MEDV`, manteniendo constantes el resto de variables.
+    Su efecto es muy negativo y **estadísticamente significativo**, con un intervalo $[-26.81, -11.05]$.
+
+-   **RM**: Cada habitación adicional por vivienda incrementa el valor medio de `MEDV` en **4.80 unidades**, manteniendo constantes el resto de variables, siendo uno de los efectos más fuertes y **positivos**, con intervalo $[3.76, 5.84]$.
+
+-   **DIS**: A mayor distancia a centros de empleo, el valor de `MEDV` disminuye en **1.36 unidades** por unidad de `DIS`, manteniendo constantes el resto de variables.
+    El efecto es **significativo y negativo**, con intervalo $[-1.79, -0.94]$.
+
+-   **RAD**: Por cada incremento en el índice de accesibilidad a autopistas radiales, `MEDV` aumenta en **0.26 unidades**, manteniendo constantes el resto de variables, con un intervalo $[0.12, 0.40]$.
+    Es un efecto **positivo y significativo**.
+
+-   **TAX**: Cada aumento de una unidad en la tasa de impuesto sobre bienes inmuebles reduce el valor medio de `MEDV` en **0.012 unidades**, manteniendo constantes el resto de variables, con intervalo $[-0.0193, -0.0044]$, por lo tanto, **significativo**.
+
+-   **PTRATIO**: Cada punto adicional en la razón alumno/profesor reduce `MEDV` en **0.85 unidades**, manteniendo constantes el resto de variables, con intervalo $[-1.15, -0.55]$.
+    Este efecto es **significativo y negativo**.
+
+-   **B**: Un incremento de una unidad en la variable `B` (proporción de población negra) aumenta `MEDV` en **0.009 unidades**, manteniendo constantes el resto de variables.
+    Aunque el efecto es pequeño, es **significativo**, con intervalo $[0.0031, 0.0156]$.
+
+-   **LSTAT**: Por cada punto porcentual adicional en la proporción de población de bajo nivel socioeconómico, `MEDV` disminuye en **0.36 unidades**, manteniendo constantes el resto de variables, siendo uno de los efectos más fuertes.
+    Su intervalo $[-0.48, -0.24]$ confirma que es **significativo y negativo**.
+
+### 3.1.5 Selección de variables predictoras
+
+No se considera necesario aplicar técnicas adicionales de selección de variables predictoras, ya que este proceso se ha abordado previamente durante el contraste de hipótesis.
+
+A partir de dicho análisis, se identificaron y eliminaron aquellas variables que no presentaban una influencia significativa sobre la variable respuesta `MEDV`, lo que permitió simplificar el modelo sin comprometer su capacidad predictiva. Por tanto, se continúa el estudio utilizando únicamente las variables que han demostrado ser relevantes estadísticamente.
+
+### 3.1.6 Diagnosis del modelo
+
+Tras la aplicación e interpretación del modelo, resulta fundamental verificar su validez, lo que implica comprobar el cumplimiento de las hipótesis iniciales asociadas al comportamiento de los residuos. Para ello, se recopilan los residuos en un objeto de tipo tibble mediante la función `residuals()`.
+
+```{r}
+resid <- tibble(resid = residuals(mlr)) |> 
+  glimpse()
+```
+
+### 3.1.7 Relación lineal entre la variable respuesta y las variables predictoras
+
+Una de las hipótesis fundamentales del modelo de regresión lineal múltiple es que existe una **relación lineal** entre la variable dependiente $Y$ y cada una de las variables predictoras $X_1, X_2, \dots, X_p$.
+
+Esta relación puede expresarse mediante el siguiente modelo:
+
+$$
+Y = \beta_0 + \beta_1 X_1 + \beta_2 X_2 + \dots + \beta_p X_p + \varepsilon
+$$
+
+donde: - $\beta_0$ es la ordenada en el origen (intercepto), - $\beta_j$ representa el efecto medio de la variable $X_j$ sobre $Y$, manteniendo el resto de variables constantes, - $\varepsilon$ es el término de error aleatorio, que debe cumplir ciertas condiciones para que el modelo sea válido.
+
+Para verificar esta relación lineal, es necesario **graficar los residuos del modelo** frente a cada variable predictora.
+Si los residuos se distribuyen de manera aleatoria (sin patrones claros), se puede asumir que existe una relación lineal adecuada.
+
+En caso contrario, si se observa algún patrón (curvas, acumulaciones, etc.), podría indicar una relación no lineal.
+En tal situación, es recomendable aplicar **transformaciones a las variables independientes**, tales como:
+
+-   $\log(X)$
+-   $\sqrt{X}$
+-   $X^2$
+
+Estas transformaciones pueden ayudar a linealizar la relación entre las variables y mejorar el ajuste del modelo.
+
+A continuación, se utilizan herramientas gráficas como `ggpairs()` para examinar los residuos frente a cada predictor, añadiendo los residuos al conjunto de entrenamiento:
+
+```{r ggpairs_grande1, fig.width=18, fig.height=14, message=FALSE, warning=FALSE}
+data_train |>
+  mutate(
+    resid = residuals(mlr)
+  ) |> 
+  ggpairs()
+```
+
+Para la variable RM: aunque se observa un ligero patrón parabólico en los residuos, el diagrama de puntos con la variable respuesta MEDV y el coeficiente de correlación lineal sugieren que existe una relación lineal entre las variables. Por lo tanto, no es necesario aplicar ninguna transformación.
+
+Para la variable LSTAT: se observa claramente que no hay una relación lineal con la variable MEDV. Los residuos muestran un patrón parabólico y el diagrama de puntos sugiere una posible relación exponencial. En este caso, es necesario transformar la variable LSTAT.
+
+```{r}
+data_train |>
+  select(LSTAT) |>
+  mutate(
+    log_LSTAT = log(LSTAT),
+    sqrt_LSTAT = sqrt(LSTAT),
+    LSTAT2 = LSTAT^2,
+    resid = residuals(mlr)
+  ) |>
+  ggpairs()
+```
+
+Se concluye que la transformación más adecuada corresponde al término cuadrático (LSTAT²), ya que es la que presenta el menor patrón en los residuos y muestra una correlación lineal significativa con estos (-0.114\*).
+
+Se aplica la transformación logarítmica a la variable LSTAT y se ajusta nuevamente el modelo de regresión lineal múltiple.
+
+```{r}
+data_train <- data_split |>
+  training() |>
+  mutate(LSTAT2 = LSTAT^2) |>
+  select(-INDUS, -AGE, -LSTAT) |>
+  glimpse()
+
+data_test <- data_split |>
+  testing() |>
+  mutate(LSTAT2 = LSTAT^2) |>
+  select(-INDUS, -AGE, -LSTAT) |>
+  glimpse()
+
+mlr <- lm(MEDV ~ ., data = data_train)
+
+summary(mlr)
+```
+
+```{r ggpairs_grande2, fig.width=18, fig.height=14, message=FALSE, warning=FALSE}
+data_train |> 
+  mutate(
+    resid = residuals(mlr)
+  ) |> 
+  ggpairs()
+```
+
+En esta etapa, los residuos no presentan patrones visibles, lo que sugiere que la relación entre la variable respuesta y las variables predictoras puede considerarse lineal. En consecuencia, se puede continuar con el análisis.
+
+### 3.1.8 Homocedasticidad de los residuos
+
+Una de las condiciones fundamentales en la regresión lineal es la **homocedasticidad**, es decir, que los residuos del modelo presenten **varianza constante** a lo largo de todos los valores predichos.
+Si este supuesto no se cumple (lo que se conoce como **heterocedasticidad**), las estimaciones del modelo pueden ser poco fiables.
+
+Para evaluar esta condición, se aplica el **test de Breusch-Pagan**, que permite contrastar las siguientes hipótesis:
+
+-   **H$_0$**: Los residuos tienen varianza constante (homocedasticidad).
+
+-   **H$_1$*: La varianza de los residuos no es constante (heterocedasticidad).
+
+```{r}
+library(lmtest)
+```
+
+```{r}
+mlr |>
+  bptest(
+    studentize = FALSE
+  )
+```
+
+Dado que el *p*-valor obtenido es **inferior a 0.05**, el resultado es significativo y se **rechaza la hipótesis nula**.
+Esto indica evidencia de **heterocedasticidad en el modelo**.
+
+Una posible solución es aplicar una **transformación sobre la variable respuesta**.
+Por ejemplo:
+
+-   Si la varianza **aumenta** con los valores de la variable dependiente, puede usarse $\log(Y)$ o $\sqrt{Y}$.
+
+-   Si la varianza **disminuye**, se podrían probar transformaciones como $\exp(Y)$ o $Y^2$.
+
+Para visualizar y entender mejor esta variación, se presentan a continuación los **gráficos de diagnóstico del modelo**:
+
+```{r}
+library(ggfortify)
+```
+
+```{r}
+mlr |>
+  autoplot() +
+  theme_minimal()
+```
+
+A continuación se analizan los cuatro gráficos de diagnóstico del modelo de regresión lineal múltiple con el objetivo de verificar el cumplimiento de los supuestos fundamentales del modelo.
+
+------------------------------------------------------------------------
+
+#### 3.1.8.1 Residuals vs Fitted
+
+Este gráfico muestra una **ligera forma de embudo**, indicando que los residuos tienden a dispersarse un poco más conforme aumentan los valores ajustados.
+Este patrón puede interpretarse como una señal de **heterocedasticidad**, aunque **el efecto no es pronunciado**.
+La mayor parte de los puntos se agrupan de forma bastante homogénea, lo que sugiere que **la falta de homocedasticidad no es generalizada**, y puede estar influida por algunas observaciones concretas.
+
+#### 3.1.8.2 Normal Q-Q Plot
+
+El gráfico Q-Q muestra una desviación de los residuos estandarizados respecto a la línea diagonal en los extremos.
+Esto indica **cierta desviación respecto a la normalidad**, principalmente en las colas.
+No obstante, el patrón general es aceptable y **no parece haber una violación severa** del supuesto de normalidad de los errores.
+
+#### 3.1.8.3 Scale-Location (Spread-Location)
+
+Este gráfico también muestra **una leve tendencia ascendente en la dispersión** de los residuos frente a los valores ajustados.
+Al igual que en el gráfico anterior, se identifica una cierta heterocedasticidad, pero de nuevo **no es especialmente acusada** ni afecta de forma sistemática a todo el rango de valores.
+
+#### 3.1.8.4 Residuals vs Leverage
+
+En este gráfico se observan algunas observaciones con valores elevados de leverage (por ejemplo, las observaciones 152, 304 y 81).
+Aunque estos puntos tienen un mayor potencial de influencia, **ninguno de ellos presenta un efecto desproporcionado** sobre el ajuste del modelo.
+
+En conclusión, aunque el contraste estadístico detecta una posible heterocedasticidad, el análisis visual sugiere que **la suposición de homocedasticidad se cumple razonablemente en la mayoría del rango de datos**.
+Por tanto, **no se considera necesario aplicar transformaciones a la variable respuesta**, ya que el modelo parece suficientemente robusto para los fines del análisis.
+
+### 3.1.9 Independencia de los residuos
+
+Es necesario comprobar si los residuos son independientes. Para ello, se aplica el **Test de Durbin-Watson** que permite contrastar las hipótesis: - **H0**: Independencia **vs** **H1**: Dependencia
+
+Este test se encuentra en la función `dwtest(model, alternative = "two.sided")` del paquete `lmtest`.
+
+```{r}
+mlr |> 
+  dwtest(alternative = "two.sided")
+```
+
+Al obtener un p-valor superior a 0.05, no se rechaza la hipótesis nula, lo que indica que los residuos son independientes.
+
+### 3.1.10 Normalidad de los residuos
+
+Es fundamental que los residuos sigan una distribución normal.
+Para verificar esto, se utiliza el **Test de Kolmogorov-Smirnov-Lilliefors**, que evalúa las siguientes hipótesis:
+
+-   **H0**: Normalidad **vs** **H1**: No normalidad
+
+Este test se encuentra en la función `lillie.test(residual)` del paquete `nortest`.
+
+```{r}
+library(nortest)
+```
+
+```{r}
+resid |> 
+  pull() |> 
+  lillie.test()
+```
+
+De nuevo, el resultado del test es significativo (p-valor \< 0.05), por lo que se rechaza la hipótesis nula de normalidad.
+
+No obstante, el gráfico Normal Q-Q revela que hay puntos en la parte inferior que se desvían de la diagonal, lo cual podría indicar la presencia de leverages.
+
+### 3.1.11 Multicolinealidad
+
+Uno de los principales inconvenientes en la regresión múltiple es la presencia de correlación entre las variables predictoras, ya que esto dificulta distinguir el aporte individual de cada una al modelo.
+
+Para detectar este problema se emplean los factores de inflación de la varianza (VIF), los cuales reflejan la existencia de colinealidad. En general, un VIF menor a 5 indica ausencia de colinealidad relevante, mientras que valores superiores a este umbral revelan una alta dependencia entre variables, lo cual representa un inconveniente.
+
+Como estrategia para abordarlo, se recomienda eliminar las variables altamente correlacionadas o bien combinarlas en un único predictor.
+El cálculo de los VIF se realiza mediante la función `vif()` de la librería **car**.
+
+```{r}
+library(car)
+```
+
+```{r}
+mlr |>
+  vif()
+```
+
+Además, se utiliza la función `check_collinearity()` del paquete **performance** para analizar y visualizar gráficamente los niveles de colinealidad:
+
+```{r}
+library(performance)
+```
+
+
+```{r}
+vif_results <- mlr |> 
+  check_collinearity()
+
+vif_results |> 
+  plot()
+```
+
+En el gráfico se observa que la mayoría de los predictores presentan valores VIF inferiores a 5, lo cual indica niveles aceptables de colinealidad.
+
+No obstante, las variables `RAD` y `TAX` presentan VIF superiores a 6, lo que sugiere una dependencia significativa entre ellas. Esta sospecha se confirma mediante el cálculo del coeficiente de correlación entre ambas variables:
+
+```{r}
+cor(data$RAD, data$TAX)
+```
+
+Este alto grado de correlación se interpreta considerando que las zonas con mayor accesibilidad a autopistas (`RAD`) tienden a estar más urbanizadas y, en consecuencia, presentan mayores tasas impositivas (`TAX`) para financiar infraestructura y servicios urbanos.
+Por tanto, ambas variables podrían estar actuando como indicadores del nivel de desarrollo y conectividad urbana.
+
+Ante esta situación, se consideran dos alternativas para abordar la multicolinealidad observada entre las variables `RAD` y `TAX`.
+
+Por un lado, se plantea **eliminar la variable `TAX`**, al entender que su efecto ya se encuentra representado de forma adecuada por `RAD`, el cual actúa como un predictor más directo de accesibilidad vial. Esta opción permite reducir la multicolinealidad y mejorar la interpretabilidad del modelo sin una pérdida significativa de información.
+
+Por otro lado, se contempla la posibilidad de **combinar ambas variables en un único predictor**, con el objetivo de preservar la información que cada una aporta, y capturar un posible efecto conjunto. Para ello, se propone una nueva variable denominada `RAD_TAX_score`, definida como la razón entre `RAD` y `TAX`:
+
+$$
+\textrm{RAD\_TAX\_SCORE} = \frac{\textrm{RAD}}{\textrm{TAX}}
+$$
+
+
+Esta combinación no se realiza de manera arbitraria: se utiliza una **división** porque permite capturar una interpretación relevante en el contexto urbano. Concretamente, `RAD_TAX_score` representa la **proporción de accesibilidad vial disponible (RAD) en relación con la carga fiscal (TAX)**.
+
+En otras palabras, mide **cuánta infraestructura vial se obtiene por cada unidad de presión impositiva**. Esta proporción puede interpretarse como un **indicador de eficiencia urbana**, donde un valor más alto sugiere que el ciudadano dispone de más accesibilidad por cada unidad de impuesto que paga.
+
+Entre ambas alternativas, se opta finalmente por la creación del nuevo predictor `RAD_TAX_SCORE`, al considerarse que aporta una interpretación más rica y específica del equilibrio entre infraestructura y fiscalidad. Posteriormente, se analizará su impacto dentro del modelo y se comparará su rendimiento frente a otras configuraciones.
+
+```{r}
+data_train <- data_split |>
+  training() |>
+  mutate(LSTAT2 = LSTAT^2) |>
+  mutate(RAD_TAX_SCORE = RAD / TAX) |>
+  select(-INDUS, -AGE, -LSTAT, -RAD, -TAX) |>
+  glimpse()
+
+data_test <- data_split |>
+  testing() |>
+  mutate(LSTAT2 = LSTAT^2) |>
+  mutate(RAD_TAX_SCORE = RAD / TAX) |>
+  select(-INDUS, -AGE, -LSTAT, -RAD, -TAX) |>
+  glimpse()
+
+mlr <- lm(MEDV ~ ., data = data_train)
+
+summary(mlr)
+```
+
+Como el valor-p es inferior al nivel de significación $\alpha = 0.05$, se obtiene un resultado significativo.
+Por tanto, se rechaza la hipótesis nula, y se concluye que al menos una de las variables predictoras influye sobre la variable respuesta `MEDV`. Ademas, todas las variables tienen un p-valor inferior a 0.05, por lo que todas son significativas.
+
+A continuación, se vuelven a interpretar los coeficientes del modelo ajustado. Cada valor representa el efecto marginal de una variable predictora sobre el valor medio de la variable respuesta `MEDV`, manteniendo constante el resto de las variables. Para cada estimación se incluye su intervalo de confianza al 95%, el cual indica el rango dentro del cual se espera que se encuentre el verdadero valor del coeficiente con un 95% de certeza.
+
+```{r}
+mlr |>
+  coef()
+```
+
+```{r}
+mlr |>
+  confint()
+```
+
+-   **(Intercept)**: Cuando todas las variables predictoras toman el valor cero, el valor medio de la vivienda es de **15.91 unidades**, con un intervalo de confianza entre **3.75 y 28.07**.
+    Aunque su interpretación no es práctica, sirve como referencia base del modelo.
+
+-   **CRIM**: Un incremento de una unidad en el índice de criminalidad disminuye el valor medio de la vivienda en **0.13 unidades**.
+    El intervalo de confianza va de **-0.20 a -0.06**, lo que confirma un efecto negativo estadísticamente significativo.
+
+-   **ZN**: Por cada unidad adicional en la proporción de suelo residencial de baja densidad, el valor medio de la vivienda aumenta en **0.043 unidades**, con un intervalo de confianza entre **0.012 y 0.075**, indicando que este efecto positivo también es significativo.
+
+-   **CHAS**: Las viviendas situadas junto al río Charles tienen, en promedio, un valor **2.94 unidades superior**, con un intervalo entre **0.96 y 4.92**.
+    Esto sugiere que dicha ubicación es valorada positivamente por el mercado.
+
+-   **NOX**: Un aumento de una unidad en la concentración de óxidos nítricos se asocia con una disminución de **25.01 unidades** en el valor medio de la vivienda.
+    El intervalo de confianza, entre **-32.66 y -17.35**, confirma que este impacto negativo es fuerte y significativo.
+
+-   **RM**: Cada habitación adicional en una vivienda incrementa el valor medio en **6.05 unidades**, con un intervalo de **5.03 a 7.07**, lo que demuestra que se trata de uno de los factores con mayor peso positivo en el precio.
+
+-   **DIS**: Aumentar en una unidad la distancia a los centros de empleo reduce el valor de la vivienda en **1.21 unidades**, con un intervalo entre **-1.65 y -0.77**.
+    El efecto negativo es claro y significativo.
+
+-   **PTRATIO**: Por cada unidad adicional en la ratio alumno/profesor, el valor medio de la vivienda disminuye en **1.00 unidad**, con un intervalo entre **-1.30 y -0.71**, lo que indica que la calidad del sistema educativo influye en el precio de las viviendas.
+
+-   **B**: Esta variable representa una transformación del porcentaje de población afroamericana.
+    Su coeficiente es de **0.0125**, con un intervalo de confianza entre **0.0061 y 0.0190**, mostrando un efecto positivo moderado pero significativo.
+
+-   **LSTAT2**: Esta variable corresponde a una transformación (probablemente al cuadrado) de la proporción de población de bajo nivel socioeconómico.
+    Un aumento en esta variable se asocia con una disminución de **0.0046 unidades** en el valor medio, con un intervalo entre **-0.0076 y -0.0015**, confirmando su efecto negativo y significativo.
+
+-   **RAD_TAX_SCORE**: Esta variable representa la proporción de accesibilidad vial (RAD) por unidad de carga impositiva (TAX).
+    Un aumento en esta razón incrementa el valor medio de la vivienda en **89.62 unidades**, con un intervalo de confianza entre **23.20 y 156.05**.
+    Este resultado muestra un fuerte efecto positivo, lo que sugiere que zonas con buena infraestructura vial en relación con los impuestos están significativamente mejor valoradas.
+
+Después de aplicar e interpretar el modelo, es volvemos a verificar su validez, es decir, comprobar si se cumplen las hipótesis iniciales del modelo. Estas hipótesis están relacionadas con los residuos del modelo. Para ello, se recopilan los residuos del modelo ajustado en un objeto tipo tibble utilizando la función `residuals()`, tal como se hizo anteriormente.
+
+```{r}
+resid <- tibble(resid = residuals(mlr)) |> 
+  glimpse()
+```
+
+```{r ggpairs_grande3, fig.width=18, fig.height=14, message=FALSE, warning=FALSE}
+data_train |>
+  mutate(
+    resid = residuals(mlr)
+  ) |> 
+  ggpairs()
+```
+
+Como se observa, los residuos no presentan ningún patrón, lo que indica que la relación entre la variable respuesta y las variables predictoras es lineal.
+
+El siguiente paso es comprobar la homocedasticidad de los residuos.
+
+```{r}
+mlr |>
+  bptest(
+    studentize = FALSE
+  )
+```
+
+Dado que el *p*-valor obtenido es **inferior a 0.05**, el resultado es significativo y se **rechaza la hipótesis nula**.
+Esto vuelve a evidenciar la **heterocedasticidad en el modelo**.
+
+Para verificar la validez del modelo ajustado, se analizan los gráficos de diagnóstico generados a partir de los residuos
+
+```{r}
+mlr |>
+  autoplot() +
+  theme_minimal()
+```
+
+Los **gráficos de diagnóstico** muestran que la dispersión de los residuos se mantiene relativamente constante en la mayor parte del rango de valores ajustados.
+Aunque pueden identificarse algunos puntos atípicos, no se observa un patrón claro de incremento sistemático en la varianza.
+
+Por tanto, se concluye que, si bien el test formal detecta cierta heterocedasticidad, esta **no parece generalizada ni lo suficientemente severa** como para comprometer la validez del modelo.
+Se decide **no aplicar transformaciones adicionales** a la variable respuesta, considerando que el comportamiento de los residuos es, en líneas generales, aceptable para los fines del análisis.
+
+Continuando con la comprobación de la independencia de los residuos, se aplica el **Test de Durbin-Watson**:
+
+```{r}
+mlr |> 
+  dwtest(alternative = "two.sided")
+```
+
+Al obtener un p-valor superior a 0.05, no se rechaza la hipótesis nula, lo que indica que los residuos son independientes.
+
+A continuación, se verifica la normalidad de los residuos mediante el **Test de Kolmogorov-Smirnov-Lilliefors**:
+
+```{r}
+resid |> 
+  pull() |> 
+  lillie.test()
+```
+
+El resultado del test es significativo (p-valor \< 0.05), lo que nos permite rechazar la hipótesis nula de normalidad.
+Sin embargo, el gráfico Normal Q-Q muestra que hay puntos en la parte inferior que se alejan de la línea diagonal, lo que podría sugerir la presencia de valores influyentes.
+
+El siguiente paso es analizar la multicolinealidad entre las variables predictoras.
+
+```{r}
+mlr |>
+  vif()
+```
+
+```{r}
+vif_results <- mlr |> 
+  check_collinearity()
+
+vif_results |> 
+  plot()
+```
+
+Ahora, todos los predictores presentan valores VIF inferiores a 5, lo que indica niveles aceptables de colinealidad.
+
+### 3.1.12 Estudio de valores atípicos
+
+Un aspecto relevante en el análisis mediante modelos de regresión es la detección de valores atípicos en la variable respuesta.
+Se consideran atípicos aquellos datos cuyos residuos estudentizados se encuentran fuera del intervalo [-3, 3].
+
+Para identificarlos, se pueden calcular estos residuos utilizando la función `rstudent(model)`.
+
+```{r}
+tibble(
+  resid_stud = rstudent(mlr)
+) |> 
+  ggplot() +
+  aes(x = seq_along(resid_stud),
+      y = abs(resid_stud)) +
+  geom_point(aes(color = ifelse(abs(resid_stud) > 3,
+                                "red",
+                                "black"))) + 
+  geom_hline(yintercept = 3,
+             color = "red",
+             linetype = "dashed") +
+  scale_color_identity() +
+  labs(x = "",
+       y = "|Studentized Residuals|") +
+  theme_minimal()
+```
+
+Se identifican valores atípicos en la variable respuesta, por lo que resulta necesario proceder a su detección y eliminación.
+
+```{r}
+position_outliers <- tibble(
+  resid_stud = rstudent(mlr)
+) |> 
+  mutate(
+    id_row = row_number()
+  ) |> 
+  filter(abs(resid_stud) > 3) |> 
+  pull(id_row)
+
+print(position_outliers)
+```
+
+Una vez identificados, dichos valores atípicos deben ser eliminados del conjunto de entrenamiento, a fin de reajustar el modelo posteriormente.
+
+### 3.1.13 Estudio de Leverages
+
+Otro aspecto relevante es la presencia de valores atípicos en las variables predictoras, conocidos como *leverages*. Para identificarlos, se emplea la función `influence.measures(model)`, la cual genera una tabla con las observaciones que resultan significativamente influyentes en alguna de las variables del modelo.
+
+Se considera que una observación es un *leverage* si cumple con la siguiente condición:
+
+$$
+\hat{h}_i > 2.5 \cdot \frac{p + 1}{n}
+$$
+
+donde:
+
+-   $\hat{h}_i$ es el valor de leverage para la observación $i$,
+-   $p$ es el número de variables predictoras,
+-   $n$ es el número total de observaciones.
+
+```{r}
+infl_leverages <- mlr |>
+  influence.measures() |> 
+  summary()
+```
+
+```{r}
+p <- 10; n <- nrow(data_train)
+leverages <- tibble(
+  id_row = as.integer(rownames(infl_leverages)),
+  hat = infl_leverages[,"hat"]
+  ) |>
+  filter(hat > 2.5*(p+1)/n) |> 
+  print(n = 10)
+```
+
+```{r}
+position_leverages <- leverages |> 
+  pull(id_row)
+
+print(position_leverages)
+```
+
+Por lo tanto, las observaciones con un valor elevado de `hat` deben ser eliminadas, siempre y cuando se verifique que superan el umbral establecido.
+
+```{r}
+hat_limit <- 2.5*(p+1)/n
+hat_limit
+```
+
+Al revisar nuevamente el gráfico de diagnóstico **Residuals vs Leverages**, se observa que algunas observaciones presentan valores de *leverage* superiores a 0.0282. Estas observaciones están teniendo una influencia considerable en el modelo y podrían estar contribuyendo a la falta de normalidad y a la heterocedasticidad señaladas por los test de hipótesis.
+
+```{r}
+mlr |>
+  autoplot()
+```
+
+Por eso, es necesario eliminar los leverages del conjunto de datos.
+
+### 3.1.14 Reajuste del modelo
+
+```{r}
+position <- union(position_outliers, position_leverages)
+
+data_train <- data_train |> 
+  slice(-position)
+
+mlr <- data_train |> 
+  lm(MEDV ~ ., data = _)
+
+mlr |> 
+  autoplot() +
+  theme_minimal()
+```
+
+Al observar los gráficos, no se aprecia un patrón claro en la variabilidad de los residuos, lo que sugiere la posible ausencia de homocedasticidad. Además, se puede asumir que los residuos no siguen una distribución normal.
+
+También se identifican posibles valores atípicos y observaciones con *leverage* elevado.
+
+```{r}
+tibble(
+  resid_stud = rstudent(mlr)
+) |> 
+  ggplot() +
+  aes(x = seq_along(resid_stud),
+      y = abs(resid_stud)) +
+  geom_point(aes(color = ifelse(abs(resid_stud) > 3,
+                                "red",
+                                "black"))) + 
+  geom_hline(yintercept = 3,
+             color = "red",
+             linetype = "dashed") +
+  scale_color_identity() +
+  labs(x = "",
+       y = "|Studentized Residuals|") +
+  theme_minimal()
+```
+
+```{r}
+infl_leverages <- mlr |> 
+  influence.measures() |> 
+  summary()
+```
+
+Aún se detectan valores atípicos en la variable respuesta y observaciones con *leverage* elevado en las variables predictoras. Por lo tanto, sería necesario repetir el proceso hasta que estos casos sean eliminados o sus valores de `hat` se sitúen dentro del límite aceptable.
+
+```{r}
+summary(mlr)
+```
+
+Se observa que, tras eliminar los leverages y valores atípicos, algunas variables han perdido significación estadística. No obstante, el modelo resultante muestra una mejora en términos de precisión, reflejada en la reducción del RMSE de **4.1** a **3.815**.
+
+Este aspecto se explicará con mayor detalle en el siguiente apartado, donde se introducirá el concepto de RMSE y se analizará su evolución. Esta mejora respalda que la decisión de realizar estas eliminaciones es adecuada.
+
+```{r}
+data_train <- data_train |> 
+  select(-CHAS, -RAD_TAX_SCORE)
+
+data_test <- data_test |> 
+  select(-CHAS, -RAD_TAX_SCORE)
+
+mlr <- lm(MEDV ~ ., data = data_train)
+
+summary(mlr)
+
+
+```
+
+El modelo ajustado presenta ahora un RMSE ligeramente superior, aunque comparable, con la ventaja de que todas las variables incluidas resultan estadísticamente significativas. Dado que la eliminación de valores atípicos y variables no significativas ha reducido el RMSE, continuaré con este nuevo modelo sin volver a comprobar las hipótesis clásicas del modelo lineal.
+
+Como se comentó en clase, en contextos con datos reales es muy difícil que se cumplan todas las suposiciones teóricas del modelo de regresión lineal múltiple, y casi siempre hay alguna que se ve vulnerada. Por esta razón, y para evitar que el trabajo se vuelva excesivamente extenso, seguiré adelante con el análisis a partir de esta versión del modelo, que ya ofrece una mejora en precisión sin necesidad de mayor complejidad en esta fase.
+
+### 3.1.15 Medidas de precisión
+
+Una vez realizada la diagnosis del modelo y comprobado que, en general, se cumplen las hipótesis previas, el siguiente paso consiste en validar el modelo mediante el análisis de distintas medidas de precisión, como el **Coeficiente de Determinación Ajustado** ($R^2_{\text{ajustado}}$) y el **Error Estándar Residual** (RSE).
+
+Tal como se concluyó en el apartado anterior, esta información puede obtenerse utilizando la función `summary(model)` en R.
+En las dos últimas líneas del resumen generado por dicha función se encuentran las principales métricas de precisión:
+
+-   **Coeficiente de determinación**: `Multiple R-squared`
+-   **Coeficiente de determinación ajustado**: `Adjusted R-squared`
+-   **Error estándar residual**: `Residual standard error`
+
+Es posible acceder a dichos valores de forma directa:
+
+```{r}
+tibble(
+  Coef_Det = summary(mlr)$r.squared,
+  Coef_Det_Aj = summary(mlr)$adj.r.squared,
+  RSE = summary(mlr)$sigma
+) |> 
+  print()
+```
+
+Se observa que el valor de $R^2$ es superior a 0.7, lo cual indica que el modelo tiene un buen ajuste. En concreto, el modelo es capaz de explicar aproximadamente el **80.24 %** de la variabilidad de la variable `MEDV`.
+
+Por otro lado, el **Error Estándar Residual** (RSE) sugiere que, en promedio, las predicciones del modelo se desvían unos **3.84 mil dólares** respecto a los valores reales, lo que proporciona una estimación razonablemente precisa dentro del contexto del problema.
+
+#### 3.1.15.1 Técnicas de Validación: K-Folds Cross-Validation
+
+Dadas sus ventajas, se emplea la técnica de **validación cruzada con *k* particiones**, también conocida como *k*-Folds Cross-Validation (*k*-Folds CV). Esta técnica divide aleatoriamente el conjunto de datos en *k* subconjuntos de tamaño similar. En cada iteración, se utiliza uno de los subconjuntos como conjunto de validación y los *k – 1* restantes como conjunto de entrenamiento, repitiendo el proceso *k* veces de manera que cada grupo actúe una vez como conjunto de validación.
+
+Para su implementación, se recurre a funciones del paquete `boot`. En primer lugar, el modelo de regresión lineal se construye con la función `glm()`, y posteriormente se aplica `cv.glm(data, glmfit = model, K)` para obtener medidas de precisión como el **error cuadrático medio (MSE)** y la **raíz del error cuadrático medio (RMSE)**.
+
+
+```{r}
+library(boot)
+```
+
+```{r}
+data <- boston_housing |>
+  mutate(LSTAT2 = LSTAT^2) |>
+  select(-INDUS, -AGE, -LSTAT, -RAD, -TAX, -CHAS) |>
+  drop_na() |>
+  glimpse()
+```
+
+```{r}
+model_validation <- data |> 
+  glm(MEDV ~ .,
+      dat = _) 
+
+kfcv <- data |> 
+  cv.glm(glmfit = model_validation,
+         K = 10) 
+
+tibble(
+  mse = kfcv$delta[1],
+  rmse = sqrt(mse)
+) |> 
+  print()
+```
+
+Dado que el valor de RMSE obtenido es de **5.34**, se puede interpretar que las predicciones presentan un error medio de aproximadamente ±5.34 mil dólares respecto a los valores reales. Para valorar si este error es relativamente pequeño o grande, se analizará la distribución de la variable respuesta mostrando su histograma, así como su media y desviación típica.
+
+```{r}
+data |> 
+  summarise(
+    mean = mean(MEDV),
+    sd = sd(MEDV)
+  ) 
+```
+
+```{r}
+data |> 
+  ggplot() + 
+  aes(x = MEDV) +
+  geom_histogram(fill = "black",
+                 color = "white") + 
+  labs(x = "Valor medio de las viviendas (en miles de dólares)",
+       y = "Frecuencia Absoluta",
+       title = "MEDV",
+       subtitle = "Histograma",
+       caption = "Conjunto de datos boston housing") +
+  theme_minimal()
+```
+
+Tanto la media como la desviación típica de la variable respuesta `MEDV` (22.53 y 9.92, respectivamente), así como su histograma, indican que el valor de RMSE obtenido (**5.34**) se encuentra dentro de un rango razonable. A diferencia de otros casos donde el RMSE puede ser elevado en relación con la dispersión de los datos, en este análisis se observa que el error medio de predicción es **notablemente inferior a la desviación típica**, lo cual sugiere una buena capacidad predictiva del modelo.
+
+Para reforzar esta interpretación, se analiza a continuación el RMSE de forma normalizada:
+
+```{r}
+data |> 
+  summarize(
+    normalized_rmse = sqrt(kfcv$delta[1])/mean(MEDV)
+  )
+```
+
+El valor de RMSE normalizado obtenido es de **0.23**, lo que implica que el error medio de predicción representa aproximadamente el **23 %** de la desviación típica de la variable respuesta. Aunque este valor es superior al umbral del 10 % que suele considerarse como indicativo de un modelo altamente preciso, sigue estando dentro de un rango aceptable en el contexto de datos reales, donde es habitual cierta variabilidad.
+
+Por tanto, se puede concluir que el modelo presenta una **precisión razonable**, aunque con margen de mejora.
+
+### 3.1.16 Predicción
+
+El principal objetivo de la regresión lineal es la predicción de nuevos valores. Por este motivo, resulta fundamental evaluar las medidas de precisión, como el **error cuadrático medio (MSE)** y la **raíz del error cuadrático medio (RMSE)**, sobre el conjunto de validación.
+
+La estimación de nuevas observaciones se lleva a cabo mediante la función `predict(model, newdata)` en R.
+
+```{r}
+data_predict <- data_test |> 
+  mutate(
+  predictions = predict(mlr, 
+                        newdata = data_test)
+) |> 
+  glimpse()
+```
+
+A continuación, se procede al cálculo de las medidas de precisión **MSE** y **RMSE**.
+
+```{r}
+data_predict |> 
+  summarise(
+    mse = mean((MEDV - predictions)^2),
+    rmse = sqrt(mse)
+  ) |> 
+  print()
+```
+
+Tal y como se había observado en la validación, el valor de **RMSE** obtenido tras el proceso de predicción es moderadamente bajo, indicando que las predicciones presentan un error medio de aproximadamente **± 6.16 mil dólares** respecto a los valores reales.
+
+### 3.1.17 Conclusión
+
+El modelo de regresión lineal múltiple permitió detectar relaciones claras entre varias variables del conjunto de datos y el valor medio de las viviendas. Aunque se observó algo de multicolinealidad y heterocedasticidad, el resultado fue un buen nivel de ajuste global, lo que sugiere que el modelo representa razonablemente bien la realidad.
+
+## 3.2 Regresión Penalizada
+
+Los modelos de regresión tienen como objetivo principal predecir una variable respuesta a partir de un conjunto de variables predictoras, construyéndose generalmente bajo el criterio de minimizar la suma de los errores residuales al cuadrado (**RSS**). No obstante, estos modelos clásicos ofrecen buenos resultados únicamente cuando se cumplen ciertas hipótesis teóricas, lo cual no siempre ocurre en contextos con datos reales.
+
+Tal como se ha evidenciado en el apartado anterior, es frecuente encontrar situaciones en las que alguna de estas hipótesis no se cumple, lo que limita la fiabilidad del modelo clásico.
+
+Como alternativa, surgen los **modelos de Regresión Penalizada**, que incorporan una penalización sobre los coeficientes del modelo con el fin de controlar su magnitud y mejorar la generalización.
+
+Estos modelos minimizan una función de la forma:
+
+$$
+\text{RSS} + \lambda \cdot \text{pen}(\beta),
+$$
+
+donde:
+
+-   $\lambda > 0$ es un parámetro de penalización que regula el equilibrio entre el ajuste del modelo y la magnitud de los coeficientes.
+-   $\text{pen}(\beta)$ es una función de penalización que varía según la técnica empleada (como Ridge o Lasso), y permite establecer diferentes enfoques dentro de la regresión penalizada.
+
+A mayor valor de $\lambda$, mayor será la contracción de los coeficientes, lo que puede reducir su impacto en el modelo y favorecer, en algunos casos, la selección de variables más relevantes.
+
+A continuación, se considerarán únicamente aquellas variables que, en el apartado anterior, han demostrado tener una influencia significativa sobre la variable respuesta.
+
+```{r}
+data |>
+  glimpse()
+```
+
+En este apartado se estudiarán dos técnicas de **regresión penalizada**:
+
+-   **Regresión Ridge**, cuya función de penalización es:
+
+$$
+\text{pen}(\beta) = \sum_{j=1}^{p} \beta_j^2
+$$
+
+-   **Regresión Lasso**, cuya función de penalización es:
+
+$$
+\text{pen}(\beta) = \sum_{j=1}^{p} |\beta_j|
+$$
+
+Ambos modelos están implementados en el paquete `glmnet` mediante la función `glmnet(x, y, alpha, lambda)`, donde el parámetro `alpha` determina el tipo de regresión (`alpha = 0` para Ridge y `alpha = 1` para Lasso), y `lambda` representa el valor del parámetro de penalización.
+
+Para aplicar correctamente estas técnicas, es necesario definir los conjuntos de entrenamiento y validación, y seleccionar el valor óptimo del parámetro $\lambda$.
+
+Para evaluar de manera robusta la capacidad de generalización del modelo, se aplicó validación cruzada k-fold. Esta técnica consiste en dividir el conjunto de datos en *k* subconjuntos de igual tamaño. En cada iteración, uno de los subconjuntos se utiliza como conjunto de validación y los restantes como entrenamiento. Este procedimiento reduce la varianza de la estimación del error, mitiga el sobreajuste y proporciona una evaluación más confiable del rendimiento del modelo.
+
+```{r}
+data_split <- data |> 
+  initial_split(prop = 0.7)
+
+data_train <- data_split |>
+  training() |>
+  glimpse()
+```
+
+```{r}
+data_test <- data_split |>
+  testing() |>
+  glimpse()
+```
+
+### 3.2.1 Regresión Ridge
+
+Este tipo de regresión penalizada se implementa mediante la función `glmnet()` estableciendo el parámetro `alpha = 0`.
+
+En este modelo, los coeficientes de regresión varían en función del valor de $\lambda$, por lo que resulta fundamental analizar previamente cómo evolucionan dichos coeficientes (o, en su defecto, las variables predictoras) a medida que se modifica el valor del parámetro de penalización.
+
+Cabe señalar que, para utilizar la función `glmnet()`, es necesario proporcionar la variable respuesta como un **vector numérico** y las variables predictoras como una **matriz**.
+
+```{r}
+library(glmnet)
+```
+
+```{r}
+ridge <-  data_train |> 
+  select(-MEDV) |> 
+  as.matrix() |> 
+  glmnet(y = data_train |> 
+           select(MEDV) |>
+           pull(), alpha = 0, lambda = 10^seq(5,-2,length = 50))
+
+ridge |> 
+  plot(xvar = "lambda")
+```
+
+Tal como se aprecia en el gráfico, a medida que el valor de $\lambda$ aumenta, los coeficientes asociados a las variables predictoras tienden a contraerse hacia cero.
+
+Para determinar el valor óptimo de $\lambda$ que minimiza el error cuadrático medio (MSE), se aplicará la técnica de **k-Fold Cross-Validation** utilizando la función `cv.glmnet(alpha, nfolds)` del paquete `glmnet`.
+
+```{r}
+CV_rigde <- data_train |> 
+  select(-MEDV) |> 
+  as.matrix() |> 
+  cv.glmnet(y = data_train |> 
+           select(MEDV) |> pull(),
+         alpha = 0,
+         nfolds = 10)
+
+CV_rigde |> 
+  plot()
+```
+
+Se observa que, a medida que el valor de $\lambda$ incrementa, el MSE también tiende a aumentar. Por tanto, se procederá a identificar el valor mínimo del MSE y el correspondiente valor óptimo de $\lambda$.
+
+```{r}
+ridge_metrics <- tibble(
+  mse_min = min(CV_rigde$cvm),
+  rmse_min = sqrt(mse_min),
+  lambda_min = CV_rigde$lambda.min
+) |> 
+  glimpse()
+```
+
+Se concluye que el valor mínimo del MSE se alcanza con un parámetro de penalización $\lambda = 0.6199$.
+
+A partir de este resultado, se procede a ajustar el modelo de **Regresión Ridge** utilizando dicho valor óptimo de $\lambda$.
+
+```{r}
+library(broom)
+```
+
+```{r}
+rigde <-  data_train |> 
+  select(-MEDV) |> 
+  as.matrix() |> 
+  glmnet(y = data_train |> 
+           select(MEDV) |> pull(),
+         alpha = 0,
+         lambda = ridge_metrics$lambda_min)
+
+rigde |> 
+  tidy()
+```
+
+Para visualizar los coeficientes del modelo en formato tabla, se emplea la función `tidy()` del paquete `broom`.
+
+A continuación, se compararán estas estimaciones con las obtenidas previamente en el modelo de **Regresión Lineal Múltiple**.
+
+```{r}
+data_train |> 
+  lm(MEDV ~ .,
+     data = _) |> 
+  coef()
+```
+
+Se observa que los coeficientes con valores más elevados en el modelo de regresión lineal múltiple han sido reducidos tras aplicar la regresión Ridge. Por ejemplo, el coeficiente asociado a la variable `NOX` ha pasado de **-25.68** a **-18.00**, mostrando cómo la penalización limita su magnitud sin cambiar su sentido.
+
+A continuación, se realizarán predicciones con el modelo penalizado utilizando la función `predict.glmnet(model, s, newx)`, donde $s$ representa el valor óptimo de $\lambda$ y `newx` corresponde a la matriz de variables predictoras, permitiendo así calcular las medidas de precisión **MSE** y **RMSE**.
+
+```{r}
+data_predict <- data_test |> 
+  mutate(
+    predictions_ridge = ridge |> 
+      predict.glmnet(newx = data_test |> 
+                select(-MEDV) |> 
+                as.matrix(),
+              s = ridge_metrics$lambda_min) |> 
+      as.numeric()
+  ) |> 
+  glimpse()
+```
+
+Respecto a las medidas de precisión:
+
+```{r}
+data_predict |> 
+  summarise(
+    MSE = mean((MEDV - predictions_ridge)^2),
+    RSME = sqrt(MSE)
+  ) |> 
+  glimpse()
+```
+
+De este modo, las predicciones obtenidas presentan un error medio de aproximadamente ±5.44 miles de dolares respecto a los valores reales.
+
+Finalmente, uno de los principales inconvenientes de este tipo de regresión penalizada es que mantiene todas las variables predictoras en el modelo, lo que complica su interpretación.
+
+Entre las principales limitaciones de los modelos utilizados se encuentran la suposición de linealidad en las relaciones entre variables predictoras y la respuesta, lo que puede no cumplirse completamente en todos los casos. Además, la presencia de multicolinealidad puede distorsionar la interpretación de los coeficientes, y los valores atípicos pueden influir desproporcionadamente en los resultados.
+
+Por otro lado, la heterocedasticidad y la falta de normalidad de los residuos afectan la validez de las inferencias estadísticas.
+
+Finalmente, el tamaño limitado del conjunto de datos podría restringir la capacidad de generalización de los modelos entrenados.
+
+### 3.2.2 Regresión Lasso
+
+Este tipo de regresión penalizada se implementa mediante la función `glmnet()` estableciendo el parámetro `alpha = 1`.
+Una de sus características principales es que, cuando el valor de $\lambda$ es suficientemente grande, el modelo fuerza a que algunos coeficientes sean exactamente iguales a cero, lo que permite realizar una selección automática de las variables predictoras.
+
+Al igual que en la regresión Ridge, se analizará cómo varían los coeficientes de las variables predictoras en función del valor de $\lambda$.
+
+```{r}
+lasso <-  data_train |> 
+  select(-MEDV) |> 
+  as.matrix() |> 
+  glmnet(y = data_train |> 
+           select(MEDV) |> pull(),
+         alpha = 1,
+         lambda = 10^seq(5,-2,length = 50))
+
+lasso |> 
+  plot(xvar = "lambda")
+```
+
+Tal como se observa en el gráfico, a medida que el valor de $\lambda$ aumenta, los coeficientes de las variables predictoras tienden a contraerse hacia cero.
+
+Para determinar el valor óptimo de $\lambda$ que minimiza el MSE, se aplicará de nuevo la técnica de **k-Fold Cross-Validation** utilizando la función `cv.glmnet(alpha, nfolds)`.
+
+```{r}
+CV_lasso <- data_train |> 
+  select(-MEDV) |> 
+  as.matrix() |> 
+  cv.glmnet(y = data_train |> 
+           select(MEDV) |> pull(),
+         alpha = 1,
+         nfolds = 10)
+
+CV_lasso |> 
+  plot()
+```
+
+Se observa que, a medida que el valor de $\lambda$ aumenta, el MSE también tiende a incrementarse.
+
+Por tanto, se buscará identificar el valor mínimo del MSE junto con el correspondiente valor óptimo de $\lambda$. Además, se aprecia que, conforme aumenta el parámetro de penalización, el número de variables incluidas en el modelo disminuye, tal como se muestra en el eje horizontal superior del gráfico.
+
+```{r}
+lasso_metrics <- tibble(
+  MSE_min = min(CV_lasso$cvm),
+  RMS_min = sqrt(MSE_min),
+  lambda_min = CV_lasso$lambda.min
+) |> 
+  glimpse()
+```
+
+Se concluye que el valor mínimo del MSE se alcanza con un parámetro de penalización $\lambda = 0.0133$.
+
+A partir de este resultado, se procede a ajustar el modelo de **Regresión Lasso** utilizando dicho valor óptimo de $\lambda$.
+
+```{r}
+lasso <-  data_train |> 
+  select(-MEDV) |> 
+  as.matrix() |> 
+  glmnet(y = data_train |> 
+           select(MEDV) |> pull(),
+         alpha = 1,
+         lambda = lasso_metrics$lambda_min)
+
+lasso |> 
+  tidy()
+```
+
+```{r}
+data_train |> 
+  lm(MEDV ~ .,
+     data = _) |> 
+  coef()
+```
+
+Se observa que la regresión Lasso ha reducido ligeramente la magnitud de los coeficientes, pero no ha llegado a eliminar ninguna variable del modelo. Por ejemplo; el coeficiente de `NOX`, al igual que antes; ha pasado de **-25.68** a **-18.00**, lo que indica que, aunque se ha aplicado penalización, no ha sido suficiente para forzar ningún coeficiente a cero. A continuación, se realizan predicciones con el modelo ajustado mediante la función `predict.glmnet(model, s, newx)` del paquete `glmnet`, donde $s$ corresponde al valor óptimo de $\lambda$ y `newx` representa la matriz de variables predictoras.
+
+A partir de estas predicciones se calcularán las métricas de precisión **MSE** y **RMSE**.
+
+```{r}
+data_predict <- data_test |> 
+  mutate(
+    predictions_lasso = lasso |> 
+      predict.glmnet(newx = data_test |> 
+                select(-MEDV) |> 
+                as.matrix(),
+              s = lasso$lambda.min) |> 
+      as.numeric()
+  ) |> 
+  glimpse()
+```
+
+Respecto a las medidas de precisión:
+
+```{r}
+data_predict |> 
+  summarise(
+    MSE = mean((MEDV - predictions_lasso)^2),
+    RSME = sqrt(MSE)
+  ) |> 
+  glimpse()
+```
+
+De manera que las predicciones obtenidas tienen un error medio de ± 5.3872 miles de dolares respecto a los valores reales.
+
+### 3.2.3 Conclusión
+
+En conclusión, la aplicación de técnicas de **regresión penalizada** ha permitido mejorar la precisión del modelo respecto a la regresión lineal múltiple.
+
+Inicialmente, las predicciones presentaban un error medio de aproximadamente **6.16 mil dólares**. Tras aplicar la regresión Ridge, este valor se redujo a **5.44**, y con la regresión Lasso descendió aún más hasta **5.38**. Estos resultados reflejan cómo la incorporación de penalización contribuye a obtener modelos más robustos y precisos, incluso sin eliminar variables en el caso de Lasso.
+
+## 3.3 K-Nearest Neighbors (KNN) para Regresión
+
+La técnica de aprendizaje supervisado **K-Nearest Neighbors (KNN)** permite realizar tanto tareas de regresión como de clasificación.
+En este caso, se aplicará el método KNN en un problema de regresión, con el objetivo de predecir el precio medio de la vivienda (`MEDV`), siguiendo la misma línea de los apartados anteriores.
+
+### 3.3.1 Depuración del conjunto de datos
+
+Al igual que en el apartado anterior, se mantendrán las mismas variables predictoras seleccionadas previamente, ya que han demostrado ser adecuadas para el análisis del precio medio de la vivienda (`MEDV`).
+Por tanto, no será necesario realizar una nueva selección de variables para aplicar la técnica KNN.
+
+```{r}
+data |>
+  glimpse()
+```
+
+### 3.3.2 Búsqueda del valor de K
+
+El paquete `caret` dispone de la función `knnreg()`, que permite aplicar el método de vecinos más próximos para resolver problemas de regresión.
+
+Esta técnica predice el valor de la variable respuesta `Y` a partir del promedio de los $k$ vecinos más cercanos según las variables predictoras $X_1, \dots, X_p$. Por tanto, es necesario definir una **medida de cercanía** y determinar el valor **óptimo de** $k$.
+
+En este caso, se utilizará como medida de cercanía la **distancia euclídea**, definida entre dos observaciones $x = (x_1, \dots, x_p)$ y $z = (z_1, \dots, z_p)$ como:
+
+$$
+d(x, z) = \sqrt{(x_1 - z_1)^2 + \cdots + (x_p - z_p)^2}
+$$
+
+Para encontrar el valor óptimo de $k$, se empleará una técnica de **validación cruzada**, implementada mediante la función `train()` del paquete `caret`.
+
+Esta función permite especificar el método (`method`), el preprocesado de las variables (`preProc`), la métrica de error a optimizar (`metric`), los controles de validación (`trControl`) y los valores a probar para $k$ mediante el argumento `tuneGrid`.
+
+Dado que KNN es sensible a la escala de las variables, será necesario **estandarizarlas previamente** utilizando el argumento `preProc`.
+
+Respecto a la validación, esta se gestionará a través del argumento `trControl`, empleando la función `trainControl()`, y la rejilla de valores de $k$ a evaluar se definirá con el argumento `tuneGrid`.
+
+```{r}
+library(caret)
+```
+
+```{r}
+KNN_10FCV <- data |> 
+  train(MEDV ~ .,
+        data = _,
+        method = "knn",
+        preProc = c("center","scale"),
+        metric = "RMSE",
+        trControl = trainControl(method = "cv", number = 10),
+        tuneGrid = data.frame(k = 1:40)
+  )
+
+KNN_10FCV |> 
+  ggplot() +
+  labs(x = "Número de vecinos (k)",
+       y = "RMSE",
+       title = "10-Folds CV")
+```
+
+Al representar el número de vecinos $k$ frente a la raíz del error cuadrático medio (RMSE), se observa que a partir de $k = 2$ el RMSE comienza a incrementarse. Por tanto, el valor óptimo que minimiza el error cuadrático medio se alcanza con $k = 2$.
+
+```{r}
+tibble(k = KNN_10FCV$bestTune$k,
+       RMSE = mean(KNN_10FCV$results$RMSE))
+```
+
+### 3.3.3 Conjuntos de entrenamiento y validación
+
+Para aplicar el modelo de regresión **KNN**, es necesario dividir previamente el conjunto de datos en subconjuntos de entrenamiento y validación.
+
+Se utilizarán los mismos conjuntos de entrenamiento y validación empleados en el apartado anterior.
+
+```{r}
+data_train |> 
+  glimpse()
+
+data_test |>
+  glimpse()
+```
+
+### 3.3.4 Aplicación del modelo KNN
+
+A continuación, se aplica el método **KNN** utilizando el conjunto de entrenamiento, y posteriormente se generan las predicciones sobre el conjunto de validación para calcular las métricas de precisión, concretamente el **MSE** y el **RMSE**.
+
+Para ello, se empleará la función `knnreg(k)`.
+
+```{r}
+knn <- data_train |>
+  knnreg(MEDV ~ .,
+         data = _,
+         k = KNN_10FCV$bestTune$k)
+```
+
+### 3.3.5 Predicción y Medidas de Precisión
+
+Para construir las predicciones se emplea la función **predict()**.
+
+```{r}
+data_predict <- data_test |> 
+  mutate(
+    predictions_KNN = knn |> 
+      predict(newdata = data_test)
+  ) |> 
+  glimpse()
+```
+
+```{r}
+data_predict |> 
+  summarise(
+    MSE = mean((MEDV - predictions_KNN)^2),
+    RSME = sqrt(MSE)
+  ) |> 
+  glimpse()
+```
+
+De manera que las predicciones obtenidas tienen un error medio de ± 5.388 miles de dolares respecto a los valores reales. Este valor es ligeramente superior al obtenido con la regresión Lasso.
+
+### 3.3.6 Conclusión
+
+En conclusión, la técnica **K-Nearest Neighbors (KNN)** ha permitido construir un modelo de regresión con un rendimiento aceptable en la predicción del precio medio de la vivienda. El valor óptimo de $k$ obtenido mediante validación cruzada fue $k = 2$, y el modelo resultante alcanzó un **RMSE de 5.388**, lo que indica un error medio de ±5.388 miles de dólares respecto a los valores reales. Aunque el modelo ofrece un ajuste razonable, el error es ligeramente superior al obtenido con la regresión Lasso, lo que sugiere que en este caso **KNN no mejora los resultados de los modelos anteriores**, aunque sigue siendo una alternativa válida y fácil de interpretar dentro de las técnicas de regresión supervisada.
+
+## 3.4 Arboles Aleatorios para Regresión
+
+Los **Árboles Aleatorios** (Random Forest) constituyen una técnica de aprendizaje supervisado basada en ensamblado de múltiples árboles de decisión. Este método resulta especialmente útil para tareas de regresión, ya que permite capturar relaciones no lineales entre variables y mejorar la capacidad de generalización del modelo.
+
+A diferencia de un único árbol de decisión, que puede sufrir de sobreajuste, un bosque aleatorio entrena numerosos árboles sobre subconjuntos aleatorios del conjunto de datos y selecciona aleatoriamente un subconjunto de variables en cada división. La predicción final se obtiene promediando los resultados individuales de cada árbol, lo que reduce la varianza y mejora la robustez.
+
+Este enfoque presenta varias ventajas clave:
+
+-   **Mayor precisión** frente a modelos individuales, al reducir el sobreajuste.
+    
+-   **Capacidad de manejar datos complejos y no lineales** sin necesidad de una transformación previa.
+    
+-   **Medición de la importancia de las variables**, lo que permite interpretar el modelo desde una perspectiva analítica.
+
+
+### 3.4.1 Depuración del conjunto de datos
+
+Al igual que en los apartados anteriores, se mantendrán las mismas variables predictoras seleccionadas previamente, ya que han demostrado ser adecuadas para el análisis del precio medio de la vivienda (`MEDV`).
+
+```{r}
+data |>
+  glimpse()
+```
+
+### 3.4.2 Búsqueda óptima para los parámetros: profundidad y complejidad
+
+Los modelos de árboles aleatorios pueden construirse a través del paquete `rpart`, aunque es necesario entrenar el modelo para determinar parámetros clave como la **profundidad máxima del árbol** o el **parámetro de complejidad**. Para ello, se utiliza la función `train()` del paquete `caret`, que permite optimizar dichos parámetros mediante técnicas de validación cruzada.
+
+En particular, para ajustar la profundidad del árbol, se emplea el argumento `method = "rpart2"` junto con `tuneGrid`, que permite definir el rango de valores a evaluar.
+
+```{r}
+RT_10FCV_maxdepth <- data |> 
+  train(MEDV ~ .,
+        data = _,
+        method = "rpart2",
+        metric = "RMSE",
+        trControl = trainControl(method = "cv", number = 10),
+        tuneGrid = data.frame(maxdepth = 1:20)
+  )
+
+RT_10FCV_maxdepth |> 
+  ggplot() +
+  labs(x = "Profundidad máxima del Árbol Aleatorio",
+       y = "RMSE",
+       title = "10-Folds CV")
+```
+
+Se observa que a partir de una profundidad máxima de 9, el valor del RMSE se estabiliza. Por tanto, se considera que una profundidad igual a 10 es la que permite minimizar el error cuadrático medio de forma óptima.
+
+```{r}
+tibble(maxdepth = RT_10FCV_maxdepth$bestTune$maxdepth,
+       RMSE = mean(RT_10FCV_maxdepth$resample$RMSE))
+```
+
+En cuanto al parámetro de complejidad, también es necesario determinar su valor óptimo. Para ello, se utiliza la función `train()` con los argumentos `method = "rpart"` y `tuneLength`, que permite especificar el número de valores que se evaluarán durante el proceso de ajuste.
+
+```{r}
+RT_10FCV_complexity <- data |> 
+  train(MEDV ~ .,
+        data = _,
+        method = "rpart",
+        metric = "RMSE",
+        trControl = trainControl(method = "cv", number = 10),
+        tuneLength = 10
+  )
+```
+
+```{r}
+RT_10FCV_complexity |> 
+  ggplot() +
+  labs(x = "Parámetro de Complejidad",
+       y = "RMSE",
+       title = "10-Folds CV")
+```
+
+Se observa que, a medida que el parámetro de complejidad aumenta, el RMSE también se incrementa, lo que indica que una mayor complejidad del modelo conduce a un mayor error cuadrático medio.
+
+```{r}
+tibble(maxdepth = RT_10FCV_maxdepth$bestTune$maxdepth,
+       RMSE = mean(RT_10FCV_maxdepth$resample$RMSE))
+```
+
+### 3.4.3 Conjuntos de entrenamiento y validación
+
+Una vez determinados los parámetros óptimos, se procede a aplicar el modelo de regresión de **Árboles Aleatorios** sobre los conjuntos de entrenamiento y validación.
+
+```{r}
+data_train |> 
+  glimpse()
+
+data_test |>
+  glimpse()
+```
+
+### 3.4.4 Aplicación del modelo Árboles Aleatorios
+
+A continuación, se aplica el método de **Árboles Aleatorios** sobre el conjunto de entrenamiento, y posteriormente se generan las predicciones sobre el conjunto de validación con el objetivo de calcular las medidas de precisión, concretamente el **MSE** y el **RMSE**.
+
+Para ajustar el modelo se utilizará la función `rpart(control)`.
+
+```{r}
+library(rpart)
+```
+
+```{r}
+
+model_RT <- data_train |> 
+  rpart(MEDV ~ .,
+         data = _,
+         control = rpart.control(maxdepth = RT_10FCV_maxdepth$bestTune$maxdepth,
+                                 cp = RT_10FCV_complexity$bestTune$cp))
+
+model_RT |> 
+  summary()
+```
+
+Al mostrar el resumen del modelo, se observa que el árbol aleatorio construido tiene una profundidad inferior a 9 nodos. Además, se proporciona información sobre la importancia relativa de cada variable predictora en el modelo.
+
+Finalmente, se detallan las particiones realizadas en cada vértice del árbol. Para una representación visual más clara, se puede utilizar la función `rpart.plot()` del paquete `rpart.plot`.
+
+```{r}
+library(rpart.plot)
+```
+
+
+```{r}
+model_RT |> 
+  rpart.plot()
+```
+
+En el árbol generado se observa que la variable predictora `RM` (número medio de habitaciones por vivienda) es la encargada de realizar la primera partición del conjunto, dividiendo las observaciones según si su valor es inferior a 6.9. Las observaciones que cumplen esta condición se agrupan en el nodo izquierdo, el cual representa el 86 % de los datos, y en el que la variable `LSTAT2` realiza una nueva partición.
+
+Dentro de ese subárbol izquierdo, `LSTAT2` (una transformación del porcentaje de población con bajo nivel socioeconómico) y `CRIM` (índice de criminalidad per cápita) intervienen como variables relevantes en los siguientes niveles. También aparece `NOX`, indicando que la concentración de óxidos de nitrógeno tiene cierto peso predictivo en determinadas rutas del árbol.
+
+Por otro lado, el nodo derecho inicial (RM $\geq$ 6.9) representa solo el 14 % de los datos. En este grupo, `RM` vuelve a aparecer para subdividir entre valores menores y mayores que 7.4. En las ramas finales de este lado, interviene `PTRATIO` (ratio alumno/profesor), que se utiliza para discriminar aún más los valores de la variable respuesta.
+
+En resumen, el árbol revela que las variables `RM`, `LSTAT2`, `PTRATIO`, `CRIM` y `NOX` son las más relevantes en la construcción de las particiones, siendo `RM` la que presenta mayor capacidad discriminativa al encabezar la primera división del modelo.
+
+### 3.4.5 Predicción y Medidas de Precisión
+
+Finalmente, se pueden derivar las predicciones a partir del modelo.
+
+```{r}
+data_predict <- data_test |> 
+  mutate(
+    predictions_RT = model_RT |> 
+      predict(newdata = data_test)
+  ) |> 
+  glimpse()
+```
+
+```{r}
+data_predict |> 
+  summarise(
+    MSE = mean((MEDV - predictions_RT)^2),
+    RSME = sqrt(MSE)
+  ) |> 
+  glimpse()
+```
+
+De manera que las predicciones obtenidas tienen un error medio de ± 5.004 miles de dolares respecto a los valores reales. Siendo este valor el más bajo de todos los modelos analizados hasta el momento.
+
+### 3.4.6 Conclusión
+
+En conclusión, la técnica de **Árboles Aleatorios** ha permitido construir un modelo de regresión con un rendimiento notable en la predicción del precio medio de la vivienda.
+
+Tras ajustar los parámetros de profundidad máxima y complejidad mediante validación cruzada, el modelo obtenido ha alcanzado un **RMSE de 5.00**, siendo este el valor más bajo entre todos los modelos analizados hasta el momento. Además de su rendimiento, el árbol generado proporciona una interpretación clara y visual de las decisiones del modelo, permitiendo identificar fácilmente las variables predictoras más relevantes en el proceso.
+
+# 4. Aplicación de la Técnica de Clasificación
+
+## 4.1 Regresión Logística
+
+La técnica de aprendizaje supervisado conocida como **Regresión Logística** permite clasificar observaciones cuando la variable respuesta $Y$ es cualitativa con dos posibles categorías ($Y = 0, 1$), mientras que las variables predictoras $X_1, \dots, X_p$ son cuantitativas.
+
+El modelo se basa en la construcción de una función de probabilidad:
+
+$$
+p(X_1, \dots, X_p) = P(Y = 1 \mid X_1, \dots, X_p)
+$$
+
+De manera que, si $p(X_1, \dots, X_p) > 0.5$, se clasifica la observación como $Y = 1$; en caso contrario, como $Y = 0$.
+
+Esto implica que el modelo logístico adopta la siguiente forma:
+
+$$
+\text{logit}(p(X_1, \dots, X_p)) = \log\left(\frac{p(X_1, \dots, X_p)}{1 - p(X_1, \dots, X_p)}\right) = \beta_0 + \beta_1 X_1 + \cdots + \beta_p X_p
+$$
+
+###4.1.1 Depuración del conjunto de datos
+
+Para el estudio de esta técnica, se utilizará el mismo conjunto de datos empleado anteriormente. Sin embargo, en esta ocasión, la variable a predecir será `chas`, una variable binaria que indica si la vivienda está situada cerca del río Charles (`chas = 1`) o no (`chas = 0`). Como adición, esta variable debe ser transformada a tipo **factor** para su correcta interpretación en el modelo de regresión logística.
+
+```{r}
+data<- boston_housing |> 
+  drop_na() |> 
+  glimpse()
+
+data <- data |>
+  mutate(CHAS = as.factor(CHAS)) |> 
+  glimpse()
+```
+
+```{r}
+data |> 
+  pull(CHAS) |> 
+  contrasts()
+```
+
+A continuación, se divide el conjunto de datos en subconjuntos de entrenamiento y validación. Una vez realizada la división, se procederá a analizar qué variables predictoras resultan más relevantes para la clasificación de la variable respuesta `CHAS`.
+
+### 4.1.2 Conjuntos de Entrenamiento y Validación
+
+```{r}
+data_split <- data |> 
+  initial_split(prop = 0.7)
+
+data_train <- data_split |> 
+  training() |> 
+  glimpse()
+
+data_test <- data_split |> 
+  testing() |> 
+  glimpse()
+```
+
+Una vez dividido el conjunto de datos en entrenamiento y test, se procede a realizar un análisis exploratorio sobre las variables predictoras con respecto a la variable respuesta `CHAS`. Para ello, se han generado diagramas de cajas (boxplots) que permiten visualizar la distribución de cada variable cuantitativa según si la vivienda está o no situada cerca del río Charles (`CHAS = 0` o `CHAS = 1`). Este análisis resulta útil para identificar qué variables presentan diferencias significativas entre grupos y, por tanto, podrían ser relevantes en la construcción del modelo de regresión logística.
+
+```{r}
+data_train |>
+  pivot_longer(cols = -CHAS, names_to = "Variable", values_to = "Valor") |> 
+  ggplot(aes(x = CHAS, y = Valor, color = CHAS)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.1, alpha = 0.5) +
+  facet_wrap(~ Variable, scales = "free") +
+  labs(
+    x = "CHAS (0 = No cerca del río, 1 = Cerca del río)",
+    y = "Valor de la variable"
+  ) +
+  guides(color = "none") +
+  theme_bw()
+```
+
+A partir del análisis exploratorio mediante diagramas de cajas, se ha evaluado la relación entre cada variable predictora y la variable binaria `CHAS`. La clave de esta interpretación se basa en la comparación de las medianas entre los grupos `CHAS = 0` y `CHAS = 1`.
+Cuanto mayor sea la distancia entre las medianas (linea central), mayor capacidad discriminativa puede tener la variable para clasificar correctamente la observación.
+
+En este sentido, las variables `PTRATIO`, `INDUS`, `TAX` muestran diferencias notables entre grupos, por lo que se consideran predictores relevantes. Además, `DIS` y `NOX` presentan una separación moderada, que también podría aportar información al modelo.
+
+Por tanto, se seleccionan estas seis variables para construir un modelo de **regresión logística múltiple** orientado a predecir si una vivienda se encuentra o no cerca del río Charles.
+
+A continuación, se analizan individualmente los diagramas de caja con el fin de mejorar la claridad en la interpretación.
+
+```{r}
+plot_chas_variable <- function(var_name) {
+  data_train |>
+    pivot_longer(cols = all_of(var_name), names_to = "Variable", values_to = "Valor") |>
+    ggplot(aes(x = as.factor(CHAS), y = Valor, color = as.factor(CHAS))) +
+    geom_boxplot() +
+    geom_jitter(width = 0.1, alpha = 0.5) +
+    facet_wrap(~ Variable, scales = "free") +
+    labs(
+      title = paste("Distribución de", var_name, "según cercanía al río"),
+      x = "CHAS (0 = No cerca del río, 1 = Cerca del río)",
+      y = "Valor de la variable"
+    ) +
+    guides(color = "none") +
+    theme_bw()
+}
+
+plot_chas_variable("PTRATIO")
+plot_chas_variable("INDUS")
+plot_chas_variable("TAX")
+plot_chas_variable("DIS")
+plot_chas_variable("NOX")
+plot_chas_variable("AGE")
+plot_chas_variable("LSTAT")
+```
+
+Se observa que la variable `PTRATIO` es la que muestra una mayor separación entre los grupos definidos por la variable `CHAS`, es decir, entre las viviendas situadas cerca o lejos del río Charles. En comparación, otras variables como `AGE` y `LSTAT` no presentan una diferenciación clara entre los grupos.
+
+La fórmula de la regresión logística ajustada se expresa de la siguiente manera:
+
+$$
+\text{logit}(P(\text{CHAS} = 1 \mid \text{PTRATIO})) = \beta_0 + \beta_1 \cdot \text{PTRATIO}
+$$
+
+### 4.1.3 Aplicación del Modelo de Regresión Logística
+
+Esta técnica se implementa mediante la función `glm(data, family)`, especificando el argumento `family = "binomial"`, ya que la variable respuesta es binaria y toma únicamente dos niveles (0 y 1).
+
+```{r}
+logistic_model <- data_train |> 
+  glm(CHAS ~ PTRATIO,
+      data = _,
+      family = "binomial")
+
+logistic_model |> 
+  summary()
+```
+
+### 4.1.4 Contraste de Hipótesis
+
+Se observa que la variable predictora `PTRATIO` es estadísticamente significativa, ya que el valor p asociado a su coeficiente es inferior a 0.05.
+
+Esto indica que existe una relación significativa entre la variable `PTRATIO` y la variable respuesta `CHAS`. Por tanto, se rechaza la hipótesis nula y se concluye que `PTRATIO` influye sobre la probabilidad de que una vivienda esté situada cerca del río Charles.
+
+```{r}
+data <- data |>
+  select(CHAS, PTRATIO)
+
+data_split <- data |> 
+  initial_split(prop = 0.7)
+
+data_train <- data_split |> 
+  training() |> 
+  glimpse()
+
+data_test <- data_split |> 
+  testing() |> 
+  glimpse()
+
+logistic_model <- data_train |> 
+  glm(CHAS ~ .,
+      data = _,
+      family = "binomial")
+```
+
+### 4.1.5 Interpretación de los Coeficientes
+
+Dado que se ha comprobado que las variables predictoras influyen sobre la variable respuesta, se procede a interpretar los coeficientes del modelo.
+
+Para ello, se utiliza la función `coef()` para obtener las estimaciones de los parámetros.
+
+```{r}
+logistic_model |> 
+  coef()
+```
+
+El coeficiente asociado a la variable `PTRATIO` es negativo, lo que indica que, a mayor ratio alumno-profesor en el municipio, menor probabilidad hay de que la vivienda esté situada cerca del río Charles.
+
+Por tanto, la probabilidad de que una vivienda esté cerca del río se puede calcular como:
+
+$$
+P(\text{CHAS} = 1 \mid \text{PTRATIO}) = \frac{e^{1.824 - 0.243 \cdot \text{PTRATIO}}}{1 + e^{1.824 - 0.243 \cdot \text{PTRATIO}}}
+$$
+
+De modo que una vivienda se clasificará en la categoría `CHAS = 1` cuando dicha probabilidad sea mayor que 0.5.
+
+Aunque la relación entre el ratio alumno-profesor (`PTRATIO`) y la cercanía al río (`CHAS`) no es directamente evidente, es posible que PTRATIO actúe como un indicador indirecto del contexto urbano o socioeconómico del área. Por ejemplo, zonas con menor ratio alumno-profesor tienden a tener mejores recursos educativos y, por tanto, podrían coincidir con áreas más cercanas al río debido a la planificación territorial.
+
+### 4.1.6 Clasificación y Medidas de Precisión
+
+Para medir la precisión de un modelo de clasificación se emplea la **matriz de confusión**, que consiste en una matriz 2x2 definida de la siguiente forma:
+
+-   **VP**: número de observaciones que pertenecen a la categoría 1 y han sido clasificadas correctamente (*verdaderos positivos*).
+-   **FN**: número de observaciones que pertenecen a la categoría 1 y han sido clasificadas incorrectamente (*falsos negativos*).
+-   **FP**: número de observaciones que pertenecen a la categoría 2 y han sido clasificadas incorrectamente (*falsos positivos*).
+-   **VN**: número de observaciones que pertenecen a la categoría 2 y han sido clasificadas correctamente (*verdaderos negativos*).
+
+A partir de esta matriz, se pueden calcular las siguientes métricas:
+
+-   **Precisión**: indica cuántas observaciones clasificadas como positivas son realmente positivas.
+
+    $$
+    \text{Precision} = \frac{VP}{VP + FP}
+    $$
+
+-   **Sensibilidad (Recall)**: indica cuántas observaciones positivas fueron correctamente detectadas.
+
+    $$
+    \text{Recall} = \frac{VP}{VP + FN}
+    $$
+
+-   **Especificidad**: indica cuántas observaciones negativas fueron correctamente clasificadas.
+
+    $$
+    \text{Specificity} = \frac{VN}{VN + FP}
+    $$
+
+-   **Exactitud (Accuracy)**: proporción total de observaciones clasificadas correctamente.
+
+    $$
+    \text{Accuracy} = \frac{VP + VN}{VP + FP + VN + FN}
+    $$
+
+-   **F1-Score**: media armónica entre precisión y sensibilidad, útil cuando se quiere balancear ambos aspectos.
+
+    $$
+    F1\text{-Score} = 2 \cdot \frac{\text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}
+    $$
+
+-   **Curva ROC**: representa la relación entre la tasa de verdaderos positivos (sensibilidad) y la tasa de falsos positivos.
+    Cuanto mayor sea el **área bajo la curva (AUC)**, mejor será el modelo.
+
+Para calcular estas métricas es necesario realizar previamente la clasificación de las observaciones.
+Esto se hace utilizando la función `predict()` con el argumento `type = "response"`.
+
+Además, se recuerda que una observación se clasifica en la categoría `Yes` cuando la probabilidad predicha es mayor que 0.5.
+
+```{r}
+data_classification <- data_test |> 
+  mutate(
+    classification_LogR = logistic_model |> 
+      predict(newdata = data_test,
+              type = "response"),
+    classification = factor(ifelse(classification_LogR == 1,
+                        1,
+                        0))
+  ) |> 
+  glimpse()
+```
+
+Una vez clasificadas las nuevas observaciones, se procede a calcular las medidas de precisión mediante la matriz de confusión. Para ello, se utiliza la función `confusionMatrix()` del paquete `caret`, especificando el argumento `positive` para indicar cuál es la categoría considerada como positiva (en este caso, las observaciones que sí corresponden a universidades privadas). Es importante seleccionar previamente las variables de interés, que en esta ocasión son la clasificación predicha (como factor) y la variable respuesta real.
+
+Posteriormente, se construye la tabla de frecuencias utilizando la función `table()`.
+
+```{r}
+data_classification <- data_classification |> 
+  mutate(
+    CHAS = factor(CHAS, levels = c(0, 1)),
+    classification = factor(classification, levels = c(0, 1))
+  )
+
+confusionMatrix(
+  data = data_classification$classification,  # predicciones
+  reference = data_classification$CHAS,       # clase real
+  positive = "1",
+  mode = "everything"
+)
+```
+
+Podemos observar que:
+
+-   $VP = 0$ observaciones que sí están cerca del río ($CHAS = 1$) y se han clasificado correctamente.\
+-   $FN = 9$ observaciones que sí están cerca del río y se han clasificado incorrectamente.\
+-   $FP = 0$ observaciones que no están cerca del río y se han clasificado incorrectamente.\
+-   $VN = 143$ observaciones que no están cerca del río ($CHAS = 0$) y se han clasificado correctamente.
+
+En cuanto a las medidas de precisión, tenemos que:
+
+-   $\text{Precisión} = \text{NA}$, ya que no se han clasificado observaciones como positivas, y por tanto no se puede calcular.\
+-   $\text{Recall} = 0.0000$, es decir, el modelo no ha logrado clasificar correctamente ninguna de las viviendas cercanas al río.\
+-   $\text{Specificity} = 1.0000$, lo que indica que el 100 % de las viviendas no cercanas al río han sido clasificadas correctamente.\
+-   $\text{Accuracy} = 0.9408$, por lo que el modelo acierta en el 94.08 % de las predicciones.\
+-   $\text{F1-Score} = \text{NA}$, ya que no se ha predicho ningún caso positivo, por lo que no se puede calcular esta media armónica entre precisión y sensibilidad.
+
+Respecto a la **curva ROC**, esta permite evaluar la capacidad del modelo para distinguir entre observaciones positivas y negativas.
+Se representa graficando la tasa de falsos positivos ($\text{FPR} = 1 - \text{Specificity}$) frente a la sensibilidad ($\text{Recall}$).
+En este caso, al no haberse predicho ninguna clase positiva, el modelo no aporta valor discriminativo y su curva ROC no tendrá utilidad práctica en este estado.
+
+```{r}
+library(pROC)
+```
+
+```{r}
+roc_obj <- roc(
+  response = data_classification$CHAS,
+  predictor = data_classification$classification_LogR,
+  levels = c("0", "1"),
+  direction = "<"
+)
+```
+
+```{r}
+tibble(
+  Recall = rev(roc_obj$sensitivities),
+  FPR = rev(1-roc_obj$specificities)
+) |> 
+  ggplot() + 
+  aes(x = FPR,
+      y = Recall) +
+  geom_line(color = "blue", linewidth = 2) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Curva ROC",
+       x = "Tasa de Falsos Positivos (FPR = 1-Specificity)",
+       y = "Sensibilidad")+
+  theme_minimal()
+```
+
+Un modelo de clasificación es más eficaz cuanto más se aproxima la curva ROC a la esquina superior izquierda del gráfico, lo que indica una alta **sensibilidad** (capacidad para detectar correctamente las observaciones positivas) y una baja **tasa de falsos positivos**.
+
+En este caso, la curva ROC se encuentra ligeramente por encima de la diagonal, lo cual indica que el modelo tiene cierta capacidad de discriminación, aunque **limitada**.
+
+Para cuantificar esa capacidad de clasificación se calcula el **área bajo la curva (AUC)**:
+
+```{r}
+roc_obj |> 
+  auc()
+```
+
+Se obtiene un valor de AUC igual a 0.699, que se sitúa muy cerca del umbral de 0.7, considerado el mínimo aceptable para considerar que un modelo tiene una capacidad discriminativa moderada.
+
+Aunque no alcanza niveles excelentes de clasificación (como un AUC superior a 0.8), este valor sí indica que el modelo funciona mejor que el azar y es capaz de clasificar con cierta efectividad las viviendas cercanas al río (CHAS = 1) frente a las que no lo están.
+
+### 4.1.7 Conclusión
+
+En conclusión, el modelo de regresión logística ajustado utilizando la variable PTRATIO presenta una capacidad moderada para distinguir entre las viviendas situadas cerca o lejos del río Charles. Esto se refleja tanto en la curva ROC como en el valor del AUC, que alcanza los 0.699.
+
+Aunque no se trata de un rendimiento óptimo, el modelo proporciona resultados interpretables y razonablemente útiles para el problema planteado. A continuación, se evaluará si el método de K-Nearest Neighbors (KNN) puede ofrecer un rendimiento superior en esta tarea de clasificación.
+
+## 4.2 K-Nearest Neighbors (KNN) para Clasificación
+
+La técnica de **K-Nearest Neighbors (KNN)** también puede aplicarse en problemas de clasificación, además de regresión. En esta sección se utilizará el método KNN para abordar un problema de clasificación binaria, donde la variable respuesta será `CHAS`, que indica si una vivienda está situada cerca del río Charles.
+
+El objetivo es evaluar la capacidad del modelo para clasificar correctamente las observaciones, y comparar su rendimiento con el obtenido mediante la regresión logística.
+
+### 4.2.1 Depuración del conjunto de datos
+
+Para este análisis se utilizarán las mismas dos variables empleadas previamente en el modelo de regresión logística simple: `PTRATIO` como variable predictora y `CHAS` como variable respuesta.
+
+```{r}
+data |>
+  glimpse()
+```
+
+### 4.2.2 Búsqueda del valor de K
+
+Al igual que en el apartado dedicado a la regresión mediante **KNN**, es necesario determinar el valor óptimo de $k$ que se utilizará para clasificar las observaciones en este nuevo contexto de clasificación. Para ello, se aplicará un proceso de validación cruzada que permita evaluar el rendimiento del modelo para distintos valores de $k$, seleccionando aquel que ofrezca los mejores resultados en términos de precisión.
+
+```{r}
+CKNN_10FCV <- data |> 
+  train(CHAS ~ .,
+        data = _,
+        method = "knn",
+        preProc = c("center","scale"),
+        metric = "Accuracy",
+        trControl = trainControl(method = "cv", number = 10),
+        tuneGrid = data.frame(k = 1:40)
+  )
+
+CKNN_10FCV |> 
+  ggplot() +
+  labs(x = "Número de vecinos (k)",
+       y = "Accuracy",
+       title = "10-Folds CV") +
+  theme_minimal()
+```
+
+Como se observa en los resultados, el valor de $k$ que proporciona la mayor exactitud del modelo es $k = 40$.
+
+```{r}
+max_acc <- max(CKNN_10FCV$results$Accuracy)
+
+k <- CKNN_10FCV$results |>
+  filter(Accuracy == max_acc) |>
+  slice_min(order_by = k, n = 1) |>
+  pull(k)
+
+k
+```
+
+### 4.2.3 Conjuntos de Entrenamiento y Validación
+
+Una vez determinado el valor óptimo de $k$, se procede a dividir el conjunto de datos en subconjuntos de entrenamiento y validación. Se utilizan los mismos conjuntos de entrenamiento y validación que se emplearon en el apartado anterior.
+
+```{r}
+data_train |> 
+  glimpse()
+
+data_test |>
+  glimpse()
+```
+
+### 4.2.4 Aplicación del modelo KNN
+
+A continuación, se aplica el método **KNN** para clasificar observaciones de la variable respuesta, utilizando $k = 24$ sobre el conjunto de entrenamiento. Posteriormente, se generan las predicciones sobre el conjunto de validación con el objetivo de evaluar la precisión del modelo a través de la matriz de confusión.
+
+Para ello, se emplea la función `knn3(k)` del paquete `caret`.
+
+```{r}
+model_CKNN <- data_train |> 
+  knn3(CHAS ~ .,
+         data = _,
+         k = CKNN_10FCV$bestTune$k)
+
+model_CKNN
+```
+
+### 4.2.5 Clasificación y Medidas de Precisión
+
+```{r}
+data_classification <- data_test |> 
+  mutate(
+    classification_KNN = model_CKNN |> 
+      predict(newdata = data_test,
+              type = "class")
+  ) |> 
+  glimpse()
+```
+
+Una vez clasificadas las nuevas observaciones, se puede proceder al cálculo de las medidas de precisión mediante la matriz de confusión.
+Para ello, se utiliza la función `confusionMatrix(positive, mode = "everything")` del paquete `caret`, indicando mediante el argumento `positive` cuál es la categoría considerada como positiva (en este caso, las observaciones clasificadas como cercanas al río).
+
+Es importante asegurarse de seleccionar las variables relevantes: por un lado, las predicciones (como factor) y, por otro, la variable respuesta real.
+
+A partir de estas, se puede construir la tabla de frecuencias utilizando la función `table()`.
+
+```{r}
+data_classification <- data_classification |>
+  mutate(
+    CHAS = factor(CHAS, levels = c(0, 1)),
+    classification_KNN = factor(classification_KNN, levels = c(0, 1))
+  )
+
+confusionMatrix(
+  data = data_classification$classification_KNN,
+  reference = data_classification$CHAS,          
+  positive = "1",                       
+  mode = "everything"
+)
+```
+
+Se observa que:
+
+- $VP = 136$ observaciones que **no están situadas cerca del río** (`CHAS = 0`) han sido correctamente clasificadas.
+- $FN = 16$ observaciones que **sí están situadas cerca del río** (`CHAS = 1`) han sido clasificadas incorrectamente.
+- $FP = 0$ observaciones que **no están cerca del río** han sido clasificadas incorrectamente como si lo estuvieran.
+- $VN = 0$ observaciones que **sí están cerca del río** y han sido clasificadas correctamente.
+
+En cuanto a las medidas de precisión, se obtienen los siguientes resultados:
+
+- **Sensitivity** = 0.0000, es decir, el modelo **no ha sido capaz de identificar ninguna observación positiva** (`CHAS = 1`) de forma correcta.
+- **Specificity** = 1.0000, lo que indica que **todas las observaciones negativas** (`CHAS = 0`) han sido correctamente clasificadas.
+- **Accuracy** = 0.8947, de modo que el modelo proporciona un 89.47 % de clasificaciones correctas, aunque únicamente porque la clase negativa predomina en el conjunto.
+- **Balanced Accuracy** = 0.5000, lo cual refleja que el modelo **no ofrece un desempeño equilibrado** entre sensibilidad y especificidad.
+- **Precision, Recall, F1**: no son computables debido a la ausencia total de predicciones positivas.
+
+
+### 4.2.7 Conclusión
+
+El modelo KNN ajustado con $k = 7$ vecinos ha mostrado una elevada tasa de acierto general, pero esta se debe al **desequilibrio entre clases**. Al no clasificar correctamente ninguna observación positiva (`CHAS = 1`), el modelo **no es capaz de detectar viviendas cercanas al río**, lo cual se refleja en una sensibilidad nula y en un valor de **accuracy engañosamente alto**. 
+
+En definitiva, a pesar de que el modelo KNN presenta una **especificidad perfecta**, su bajo poder de discriminación frente a las clases minoritarias lo convierte en una opción poco recomendable para este problema de clasificación.
+
+## 4.2 Arboles Aleatorios para Clasificación
+
+La técnica de **Árboles Aleatorios** también puede aplicarse en problemas de clasificación.
+
+### 4.2.1 Depuración del conjunto de datos
+
+En este caso, se añadirá una variable adicional al conjunto de datos, `INDUS`, que representa el porcentaje de terrenos no comerciales por ciudad.
+
+```{r}
+data <- boston_housing |> 
+  drop_na() |> 
+  glimpse()
+data <- data |>
+  mutate(CHAS = as.factor(CHAS)) |>
+  select(CHAS, PTRATIO, INDUS) |>
+  glimpse()
+```
+
+### 4.2.2 Búsqueda óptima para los parámetros: profundidad y complejidad
+
+```{r}
+CRT_10FCV_maxdepth <- data |> 
+  train(CHAS ~ .,
+        data = _,
+        method = "rpart2",
+        metric = "Accuracy",
+        trControl = trainControl(method = "cv", number = 10),
+        tuneGrid = data.frame(maxdepth = 1:20)
+  )
+
+CRT_10FCV_maxdepth |> 
+  ggplot() +
+  labs(x = "Profundidad máxima del Árbol Aleatorio",
+       y = "Accuracy",
+       title = "10-Folds CV")
+```
+
+A partir del gráfico de validación cruzada, se observa que la exactitud del modelo se mantiene constante para todos los valores de profundidad máxima evaluados. Sin embargo, el valor de maxdepth = 1 ha sido seleccionado como el óptimo, al ser el primero en alcanzar la exactitud máxima registrada (93.68 %). Este valor será utilizado para construir el modelo de clasificación mediante árboles de decisión.
+
+```{r}
+tibble(maxdepth = CRT_10FCV_maxdepth$bestTune$maxdepth,
+       Accuracy = mean(CRT_10FCV_maxdepth$results$Accuracy))
+```
+
+En cuanto al parámetro de complejidad, es necesario identificar su valor óptimo. Para ello, se utiliza el argumento `method = "rpart"` junto con `tuneLength`, que permite definir la cantidad de valores a explorar durante el proceso de ajuste.
+
+```{r}
+CRT_10FCV_complexity <- data |> 
+  train(CHAS ~ .,
+        data = _,
+        method = "rpart",
+        metric = "Accuracy",
+        trControl = trainControl(method = "cv", number = 10),
+        tuneLength = 10
+  )
+
+CRT_10FCV_complexity |> 
+  ggplot() +
+  labs(x = "Parámetro de Complejidad",
+       y = "Accuracy",
+       title = "10-Folds CV")
+```
+
+Se puede observar que, a medida que el parámetro de complejidad aumenta, la exactitud del modelo disminuye, lo que indica que una mayor complejidad conlleva un peor rendimiento en la clasificación.
+
+```{r}
+tibble(complexity = CRT_10FCV_complexity$bestTune$cp,
+       Accuracy = mean(CRT_10FCV_complexity$results$Accuracy))
+```
+
+
+### 4.2.3 Conjuntos de Entrenamiento y Validación
+
+```{r}
+data_split <- data |> 
+  initial_split(prop = 0.7)
+
+data_train <- data_split |>
+  training() |> 
+  glimpse()
+
+data_test <- data_split |>
+  testing() |> 
+  glimpse()
+```
+
+### 4.2.4 Aplicación del modelo de Árboles Aleatorios
+
+A continuación, se aplica el método de **Árboles Aleatorios** para clasificar observaciones de la variable respuesta `CHAS`, utilizando una profundidad máxima igual a 1 (`maxdepth = 1`) y un parámetro de complejidad igual a 0.00476 (`cp = 0.00476`) sobre el conjunto de entrenamiento. Posteriormente, se evalúan las clasificaciones generadas sobre el conjunto de validación para calcular las medidas de precisión a partir de la matriz de confusión.
+
+El modelo se ajusta con la función `rpart(control)` del paquete `rpart`, y su representación visual se obtiene mediante la función `rpart.plot()` del paquete `rpart.plot`.
+
+$$
+cp = 0.004761905
+$$
+
+```{r}
+model_CRT <- data_train |> 
+  rpart(CHAS ~ .,
+        data = _,
+        control = rpart.control(maxdepth = CRT_10FCV_maxdepth$bestTune$maxdepth,
+                                cp = CRT_10FCV_complexity$bestTune$cp)
+        )
+
+model_CRT |> 
+  rpart.plot()
+```
+
+Se observa en el árbol generado que no se ha producido ninguna partición, lo cual implica que el modelo no ha encontrado reglas de decisión que permitan dividir el conjunto de datos y mejorar la clasificación. En este caso, todas las observaciones han sido agrupadas en un único nodo raíz.
+
+Esto sugiere que, bajo los parámetros óptimos seleccionados (profundidad máxima = 1 y \( cp = 0.00476 \)), el modelo no ha identificado ninguna variable predictora con suficiente poder discriminativo para dividir las observaciones según la variable respuesta `CHAS`.
+
+Como consecuencia, el modelo asigna la misma clase a todas las observaciones del conjunto, lo que conlleva una clasificación muy limitada, incapaz de capturar relaciones significativas entre las variables predictoras y la variable respuesta.
+
+### 4.2.5 Clasificación y Medidas de Precisión
+
+
+```{r}
+data_classification <- data_test |> 
+  mutate(
+    classification_RT = model_CRT |> 
+      predict(newdata = data_test,
+              type = "class")
+  ) |> 
+  glimpse()
+```
+
+
+```{r}
+data_classification <- data_classification |> 
+  mutate(
+    CHAS = factor(CHAS, levels = c(0, 1)),
+    classification_RT = factor(classification_RT, levels = c(0, 1))
+  )
+
+confusionMatrix(
+  data = data_classification$classification_RT,  # predicciones
+  reference = data_classification$CHAS,          # valores reales
+  positive = "1",                                # clase positiva
+  mode = "everything"
+)
+```
+Podemos observar que:
+
+- \( VP = 141 \) observaciones que **No** están cerca del río Charles y se han clasificado correctamente.  
+- \( FN = 11 \) observaciones que **Sí** están cerca del río y se han clasificado incorrectamente.  
+- \( FP = 0 \) observaciones que **No** están cerca del río y se han clasificado incorrectamente.  
+- \( VN = 0 \) observaciones que **Sí** están cerca del río y se han clasificado correctamente.  
+
+En cuanto a las medidas de precisión, tenemos que:
+
+- \( \text{Precision} \) no es calculable, ya que el modelo no ha clasificado ninguna observación como positiva.  
+- \( \text{Recall} = 0.0000 \), es decir, el modelo no ha sido capaz de identificar ninguna de las viviendas situadas cerca del río.  
+- \( \text{Specificity} = 1.0000 \), por tanto, el 100 % de las viviendas que **no** están cerca del río se han clasificado correctamente.  
+- \( \text{Accuracy} = 0.9276 \), de modo que el modelo proporciona un 92.76 % de clasificaciones correctas.  
+- \( F_1\text{-Score} \) no es calculable, debido a que el modelo no ha realizado ninguna predicción positiva.  
+- \( \text{Balanced Accuracy} = 0.5000 \), lo cual refleja un rendimiento desequilibrado entre clases.
+
+### 4.2.6 Conclusión
+
+A pesar de que el modelo muestra una alta exactitud global, esta se debe principalmente al desbalance de clases, ya que la gran mayoría de observaciones pertenecen a la clase negativa. El modelo no ha sido capaz de identificar ninguna observación positiva, como lo demuestra su sensibilidad nula y su F1 no definido. Por tanto, el árbol de decisión no es un modelo adecuado para este problema de clasificación con la variable `CHAS` como respuesta, y sería conveniente considerar una variable alternativa con una distribución de clases más equilibrada.
